@@ -264,7 +264,6 @@ class TestCollect(unittest.TestCase):
             )
             for ax in data["radar_axes"]:
                 self.assertGreaterEqual(ax["score"], 0)
-                self.assertLessEqual(ax["score"], 100)
 
             # --all-time includes 2025 Claude session too
             out_all = tmp_path / "facts_all.json"
@@ -388,6 +387,65 @@ class TestCollect(unittest.TestCase):
                 self.assertGreater(harnesses[expected_id]["sessions"], 0)
             self.assertNotIn("trae", harnesses, "skill-only directory caused false positive detection")
             self.assertGreaterEqual(data["totals"]["bash_calls"], 4)
+
+    def test_calibrated_scoring_08x_70_and_above_100_overflow(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        try:
+            import collect  # type: ignore
+
+            def make_facts(scale: float):
+                return {
+                    "year": 2026,
+                    "peak_hour": 3,
+                    "night_owl_pct": min(100.0, 52.3 * scale),
+                    "distinct_projects": int(round(774 * scale)),
+                    "distinct_tools": int(round(229 * scale)),
+                    "verification_signals": int(round(121 * scale)),
+                    "loop_or_cron_count": int(round(561 * scale)),
+                    "harnesses": [
+                        {"id": f"h{i}", "name": f"H{i}", "detected": True, "sessions": 10, "subagents": 0, "tool_calls": 10}
+                        for i in range(max(1, int(round(9 * scale))))
+                    ],
+                    "totals": {
+                        "sessions": int(round(1151 * scale)),
+                        "subagent_sessions": int(round(4777 * scale)),
+                        "tool_calls": int(round(239187 * scale)),
+                        "bash_calls": int(round(167765 * scale)),
+                        "bash_share_pct": 70.1,
+                        "active_days": min(366, int(round(226 * scale))),
+                        "max_parallel_turn": int(round(26 * scale)),
+                        "multi_tool_turn_pct": min(100.0, 14.4 * scale),
+                    },
+                    "inventory": {
+                        "skills_installed": int(round(297 * scale)),
+                        "agents_installed": int(round(162 * scale)),
+                        "plugins_total": int(round(33 * scale)),
+                        "plugins_unused": int(round(23 * scale)),
+                        "auto_or_bypass": True,
+                        "grep_calls": 67,
+                    },
+                    "bash_dna": {
+                        "piped_pct": min(100.0, 68.0 * scale),
+                        "heredoc_count": int(round(28505 * scale)),
+                        "rtk_proxy_count": int(round(2389 * scale)),
+                        "test_cmd_count": int(round(3346 * scale)),
+                    },
+                }
+
+            axes_08, _ = collect.compute_radar_and_fallback(make_facts(0.8))
+            for ax in axes_08:
+                self.assertTrue(68 <= ax["score"] <= 72, f"0.8x baseline must be ~70, got {ax}")
+
+            axes_10, fb_10 = collect.compute_radar_and_fallback(make_facts(1.0))
+            for ax in axes_10:
+                self.assertTrue(85 <= ax["score"] <= 90, f"1.0x baseline must be ~88, got {ax}")
+            self.assertIn("verdict_level", fb_10)
+            self.assertIn("verdict_body", fb_10)
+
+            axes_mega, _ = collect.compute_radar_and_fallback(make_facts(1.4))
+            self.assertTrue(all(ax["score"] > 100 for ax in axes_mega), f"1.4x mega-user must exceed 100: {axes_mega}")
+        finally:
+            sys.path.pop(0)
 
 
 if __name__ == "__main__":

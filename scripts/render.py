@@ -21,7 +21,18 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TEMPLATE = ROOT / "templates" / "wrapped.html"
 PID_FILE = Path(tempfile.gettempdir()) / "ai_wrapped_server.pid"
 
-STR_FIELDS = ("archetype_id", "archetype_title", "archetype_en", "one_liner", "one_liner_en", "display_name")
+STR_FIELDS = (
+    "archetype_id",
+    "archetype_title",
+    "archetype_en",
+    "one_liner",
+    "one_liner_en",
+    "display_name",
+    "verdict_level",
+    "verdict_level_en",
+    "verdict_body",
+    "verdict_body_en",
+)
 
 
 def _clean_str_list(val: Any) -> list[str] | None:
@@ -69,10 +80,11 @@ def validate_and_merge_persona(facts: dict[str, Any], persona_path: Path | None)
         if isinstance(val, str) and val.strip():
             merged[k] = val.strip()
 
-    # Prevent mixing newly authored ZH one_liner with stale fallback EN copy
-    if isinstance(loaded.get("one_liner"), str) and loaded["one_liner"].strip():
-        if not (isinstance(loaded.get("one_liner_en"), str) and loaded["one_liner_en"].strip()):
-            merged["one_liner_en"] = merged["one_liner"]
+    # Prevent mixing newly authored ZH copy with stale fallback EN copy
+    for zh_k, en_k in (("one_liner", "one_liner_en"), ("verdict_level", "verdict_level_en"), ("verdict_body", "verdict_body_en")):
+        if isinstance(loaded.get(zh_k), str) and loaded[zh_k].strip():
+            if not (isinstance(loaded.get(en_k), str) and loaded[en_k].strip()):
+                merged[en_k] = merged[zh_k]
 
     badges = _clean_str_list(loaded.get("secondary_badges"))
     if badges:
@@ -228,7 +240,7 @@ def stop_previous_server() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Render and serve AI Developer Wrapped.")
-    parser.add_argument("--facts", required=True, help="Path to sanitized facts.json")
+    parser.add_argument("--facts", default="/tmp/ai_wrapped_facts.json", help="Path to sanitized facts.json (default: /tmp/ai_wrapped_facts.json)")
     parser.add_argument("--persona", default="", help="Optional path to AI-authored persona.json")
     parser.add_argument("--out", default="/tmp/ai_wrapped_site/index.html", help="Output HTML path")
     parser.add_argument("--lang", default="auto", choices=["auto", "zh", "en"], help="Initial UI language")
@@ -240,6 +252,8 @@ def main() -> None:
     args = parser.parse_args()
 
     facts_path = Path(args.facts).resolve()
+    if not facts_path.exists():
+        parser.error(f"Facts file not found: {facts_path}. Run scripts/collect.py first.")
     facts = json.loads(facts_path.read_text(encoding="utf-8"))
     persona_path = Path(args.persona).resolve() if args.persona else None
     persona = validate_and_merge_persona(facts, persona_path)

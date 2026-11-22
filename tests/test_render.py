@@ -111,6 +111,10 @@ def sample_facts() -> dict:
                 "chaos_grit": "70.3% raw Bash execution",
                 "ai_addict": "224 active days with AI",
             },
+            "verdict_level": "先锋玩家",
+            "verdict_level_en": "Vanguard Builder",
+            "verdict_body": "少点折腾工具，继续猛干就完事了。",
+            "verdict_body_en": "Hoard fewer plugins, keep shipping.",
         },
     }
 
@@ -248,6 +252,58 @@ class TestRender(unittest.TestCase):
                 except OSError:
                     pass
                 pid_file.unlink(missing_ok=True)
+
+    def test_verdict_card_and_out_of_bounds_radar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            facts = sample_facts()
+            facts["radar_axes"][0]["score"] = 138
+            facts_p = tmp_path / "facts.json"
+            persona_p = tmp_path / "persona.json"
+            out_html = tmp_path / "index.html"
+            facts_p.write_text(json.dumps(facts), encoding="utf-8")
+            persona_p.write_text(json.dumps({
+                "archetype_id": "test-hero",
+                "archetype_title": "测试超标战神",
+                "archetype_en": "138-Score Legend",
+                "one_liner": "超表也要继续猛干。",
+                "secondary_badges": ["破表级"],
+                "memes": [{"tag": "t", "line": "line"}],
+                "axis_notes": {"night_owl": "138爆表"},
+                "verdict_level": "破表级先锋",
+                "verdict_level_en": "Over-Clocked Vanguard",
+                "verdict_body": "已经冲出六边形框框了，记得按时睡觉。",
+                "verdict_body_en": "Literally off the chart—get some sleep tonight.",
+            }), encoding="utf-8")
+
+            proc = subprocess.run(
+                [sys.executable, "-I", str(RENDER), "--facts", str(facts_p), "--persona", str(persona_p), "--out", str(out_html)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            html = out_html.read_text(encoding="utf-8")
+            self.assertIn("verdictCard", html)
+            self.assertIn("破表级先锋", html)
+            self.assertIn('"score": 138', html)
+
+            # Verify --facts defaults cleanly to /tmp/ai_wrapped_facts.json
+            proc_help = subprocess.run(
+                [sys.executable, "-I", str(RENDER), "--help"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("/tmp/ai_wrapped_facts.json", proc_help.stdout)
+            out_default = tmp_path / "default_facts.html"
+            proc_def = subprocess.run(
+                [sys.executable, "-I", str(RENDER), "--out", str(out_default)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertTrue(
+                proc_def.returncode == 0 or "/tmp/ai_wrapped_facts.json" in proc_def.stderr,
+                f"unexpected default --facts result: rc={proc_def.returncode} stderr={proc_def.stderr}",
+            )
 
 
 if __name__ == "__main__":

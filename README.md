@@ -1,82 +1,53 @@
 # ai-dev-wrapped
 
-**Your AI coding year in review — across every agent assistant & IDE on your machine.**
+**Your AI coding year in review — across every AI assistant on your machine, authored by your own agent.**
 
 [English](./README.md) · [简体中文](./README_CN.md)
 
-`ai-dev-wrapped` is a zero-dependency universal skill that auto-discovers and scans **35+ local AI coding agents, CLIs, and IDEs** (Claude Code/Desktop, Codex, GitHub Copilot CLI & VS Code Chat, Antigravity, Gemini CLI, Cursor, Windsurf, Cline, Roo Code, Kilo Code, OpenCode, Kimi CLI, OpenClaw, AutoClaw, Goose, Continue, Aider, Trae, Qoder, Kiro, Qwen Code, OpenHands, Amp, Zed AI, and more).
-
-Then **your own AI agent analyzes your unique habits itself** (using the viral copywriting prompt in [`SKILL.md`](./SKILL.md) — zero hardcoded personality buckets) and opens a minimalist Linear / Apple-Notes-inspired localhost experience complete with:
-
-- **100% Agent-Analyzed Bespoke Persona (Zero Hardcoded Buckets)**: Python never assigns canned templates — `SKILL.md` prompts your own AI agent to analyze your anomalies and coin a 1-of-1 archetype & Douyin/TikTok-style roasts strictly grounded in `facts.json`
-- **Universal 6-Axis AI Persona Radar** (standardized across every developer so share cards compare apples-to-apples): `Night Owl`, `Boss Energy`, `Gear Hoarder`, `Trust Issues`, `Chaos Grit`, `AI Addict`
-- **24h Body Clock & Shell Habits** (heredoc-aware Bash parser, `&&` / pipe rates, top executables, parallel turn depth)
-- **Dual Minimalist Themes + Bilingual Toggle (`EN / 中文`)** — Linear Dark & Apple Notes Paper
-- **Zero-Dependency Ambient Synth** (Web Audio API pentatonic piano/pad)
-- **One-Click 2× Retina Share Card PNG Export**
-- **100% Local & Sanitized** — strips IPv4s, `.pem`/SSH key paths, API tokens, emails, and local home paths before rendering
+Automatically scans **35+ local AI CLIs, IDEs, and editor extensions** (Claude Code/Desktop, Codex, Copilot CLI & VS Code Chat, Antigravity, Gemini CLI, Cursor, Windsurf, Cline, Roo Code, OpenCode, Kimi, OpenClaw/AutoClaw, Goose, Continue, Aider, Grok CLI, Trae, Qoder, Kiro, Qwen Code, and more), lets **your own agent** roast your habits with a 1-of-1 Douyin/TikTok-style persona + Tier Verdict, and opens a minimalist Linear / Apple-Notes localhost page with ambient music and 2× PNG share card export.
 
 ---
 
-## Quick Start
+## Quick Start (2 Steps)
 
-### 1. Install as a Skill
-
-Clone into your preferred agent's skills directory (or symlink to multiple):
+### 1. Install the Skill
 
 ```bash
 git clone https://github.com/cuiyucheng0104-afk/ai-dev-wrapped.git ~/.claude/skills/ai-dev-wrapped
 
-# Optional: share the same skill with Codex & Antigravity
-mkdir -p ~/.codex/skills ~/.gemini/antigravity/skills
-ln -s ~/.claude/skills/ai-dev-wrapped ~/.codex/skills/ai-dev-wrapped
+# Optional: share across Antigravity & Codex
+mkdir -p ~/.gemini/antigravity/skills ~/.codex/skills
 ln -s ~/.claude/skills/ai-dev-wrapped ~/.gemini/antigravity/skills/ai-dev-wrapped
+ln -s ~/.claude/skills/ai-dev-wrapped ~/.codex/skills/ai-dev-wrapped
 ```
 
 ### 2. Trigger in Chat
 
 Simply tell your agent:
 
-- `"给我年终总结"` / `"开始吧"`
+- `"开始吧"` / `"给我年终总结"`
 - `"Generate my AI developer wrapped"`
 
-The agent scans your logs into `/tmp/ai_wrapped_facts.json`, authors your bilingual persona & memes, launches a background `127.0.0.1` server, and opens the page in your browser.
+Your browser will open automatically with your personalized bilingual report.
 
-### 3. Standalone CLI Usage (Without an Agent)
-
-```bash
-python3 scripts/collect.py --output /tmp/ai_wrapped_facts.json
-python3 scripts/render.py --facts /tmp/ai_wrapped_facts.json --serve --open
-```
+*(Optional standalone CLI without an agent: `python3 scripts/collect.py && python3 scripts/render.py --serve --open`)*
 
 ---
 
-## Supported Harnesses (35+ Auto-Discovered Agents, CLIs & IDEs)
+## Live Showcase (Author's Real Machine Test)
 
-`collect.py` automatically scans read-only local data across macOS, Linux, and Windows (only active agents with real session/tool logs are reported — never empty skill-only directories):
+Scanned on a real multi-agent workstation (**zero hardcoded templates**, **100% local & privacy-scrubbed**):
 
-| Category | Supported Tools & Data Sources |
-| :--- | :--- |
-| **CLI & Terminal Agents** | **Claude Code** (`~/.claude/projects/**/*.jsonl`, `history.jsonl`), **OpenAI Codex** (`~/.codex/state_5.sqlite`, `thread_history_1.sqlite`, JSONL), **GitHub Copilot CLI** (`~/.copilot/session-state/*/events.jsonl`), **Gemini CLI** (`~/.gemini/tmp/*/chats/*.json`, `logs.json`), **Kimi CLI** (`~/.kimi/sessions/`), **OpenCode** (`~/.local/share/opencode/` SQLite & JSON), **Goose** (`~/.local/share/goose/`, `~/.config/goose/`), **Aider** (`~/.aider.chat.history.md`, `~/.aider-desk/`) |
-| **AI IDEs & Desktop Apps** | **Claude Desktop**, **Antigravity** (`~/.gemini/antigravity/brain/`), **Cursor** (`~/.cursor/ai-tracking/`, `agent-transcripts/`), **Windsurf / Cascade** (`~/.codeium/windsurf/cascade/`, IDE chatStorage), **Trae / Trae CN** (`~/.trae*`), **Qoder** (`~/.qoder*`), **Kiro** (`~/.kiro`), **Zed AI** (`zed` conversations) |
-| **IDE Extensions** | **GitHub Copilot Chat** (VS Code / Insiders / VSCodium `workspaceStorage/*/chatSessions`), **Cline** (`saoudrizwan.claude-dev`, `~/.cline`), **Roo Code** (`rooveterinaryinc.roo-cline`, `~/.roo`), **Kilo Code** (`kilocode.kilo-code`, `~/.kilocode`), **Continue** (`~/.continue/sessions/`) |
-| **Multi-Agent / Emerging CLIs** | **OpenClaw** (`~/.openclaw`), **AutoClaw** (`~/.openclaw-autoclaw`), **Amp**, **Crush**, **Qwen Code**, **Factory Droid**, **OpenHands**, **Mistral Vibe**, **Hermes**, **JetBrains Junie**, **Augment**, **iFlow**, **Grok CLI**, **Lingma**, **CodeBuddy**, **Pi**, **Mux**, **Zencoder**, **Rovo Dev**, **CodeArts Doer** |
+- **Detected Active Assistants (`9`)**: Claude Code / Desktop, OpenAI Codex, AutoClaw, Kimi CLI, Antigravity, GitHub Copilot, OpenClaw, Grok CLI, Cursor
+- **Headline Stats**: `1,157` chats · `4,777` subagents · `239,408` tool actions · `70.1%` Bash (`94,900` bash `grep` vs `80` native `Grep`) · `26x` peak parallel · `03:00` AM peak · `297` skills installed
+- **Universal 6-Axis Score Benchmark**: `70` = `0.8×` heavy baseline (`~88` on author's data); any score **`> 100` physically breaks outside the hexagon frame**!
+- **Automated Verification**: `python3 -m unittest discover -s tests -v` → **9/9 OK**
 
----
+### Web UI (Linear Dark) & 2× Exported Share Card
 
-## Design Philosophy
-
-1. **Zero Build / Zero CDN**: Pure Python 3 standard library + single-file HTML/SVG/Canvas/WebAudio. Works completely offline.
-2. **4-Dimension Subtraction**: Inspired by Linear and Apple Notes — no marketing fluff, no redundant helper tooltips, layout-first hierarchy.
-3. **Privacy by Default**: Raw prompts, IP addresses, private keys, and tokens never enter `facts.json` or the rendered page.
-
----
-
-## Tests
-
-```bash
-python3 -m unittest discover -s tests -v
-```
+| Interactive Localhost UI | One-Click 2× Share Card PNG |
+| :---: | :---: |
+| ![Web UI Preview](./assets/preview-dark.png) | ![Share Card PNG](./assets/share-card.png) |
 
 ## License
 
