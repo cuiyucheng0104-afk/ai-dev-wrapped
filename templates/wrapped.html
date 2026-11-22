@@ -1,0 +1,1123 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="linear">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Developer Wrapped</title>
+  <style>
+    :root {
+      --bg: #08090a;
+      --surface: rgba(255, 255, 255, 0.025);
+      --surface-hover: rgba(255, 255, 255, 0.045);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text: #f7f8f8;
+      --text-secondary: #8a8f98;
+      --text-muted: #5e636e;
+      --accent: #7c8cff;
+      --accent-soft: rgba(124, 140, 255, 0.16);
+      --night: #a78bfa;
+      --bar-bg: rgba(255, 255, 255, 0.06);
+      --glow: radial-gradient(60% 45% at 50% 0%, rgba(124, 140, 255, 0.14) 0%, rgba(8, 9, 10, 0) 100%);
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      --radius: 14px;
+    }
+
+    html[data-theme="notes"] {
+      --bg: #fbfaf7;
+      --surface: #ffffff;
+      --surface-hover: #f5f2eb;
+      --border: rgba(28, 25, 23, 0.09);
+      --border-strong: rgba(28, 25, 23, 0.18);
+      --text: #1c1917;
+      --text-secondary: #68625c;
+      --text-muted: #9a938b;
+      --accent: #c26d18;
+      --accent-soft: rgba(194, 109, 24, 0.12);
+      --night: #b45309;
+      --bar-bg: rgba(28, 25, 23, 0.07);
+      --glow: radial-gradient(60% 45% at 50% 0%, rgba(217, 119, 6, 0.07) 0%, rgba(251, 250, 247, 0) 100%);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      background-image: var(--glow);
+      background-repeat: no-repeat;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    .shell {
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 28px 24px 64px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 36px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.02em;
+    }
+
+    .brand-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 7px 13px;
+      border-radius: 999px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.12s ease;
+    }
+
+    .btn:hover {
+      border-color: var(--border-strong);
+      background: var(--surface-hover);
+    }
+
+    .btn:active { transform: scale(0.98); }
+
+    .btn-primary {
+      background: var(--text);
+      color: var(--bg);
+      border-color: transparent;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+      background: var(--text);
+    }
+
+    .btn-audio.playing {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .eq {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 11px;
+    }
+    .eq span {
+      width: 2px;
+      height: 4px;
+      background: currentColor;
+      border-radius: 1px;
+    }
+    .btn-audio.playing .eq span:nth-child(1) { animation: eq 0.9s ease-in-out infinite; }
+    .btn-audio.playing .eq span:nth-child(2) { animation: eq 0.9s ease-in-out 0.2s infinite; }
+    .btn-audio.playing .eq span:nth-child(3) { animation: eq 0.9s ease-in-out 0.4s infinite; }
+    @keyframes eq {
+      0%, 100% { height: 3px; }
+      50% { height: 11px; }
+    }
+
+    .hero { margin-bottom: 28px; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+
+    .hero-title {
+      font-size: clamp(34px, 5vw, 52px);
+      font-weight: 650;
+      letter-spacing: -0.03em;
+      line-height: 1.12;
+      margin-bottom: 12px;
+    }
+
+    .hero-sub {
+      font-size: 16px;
+      color: var(--text-secondary);
+      max-width: 680px;
+      margin-bottom: 18px;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pill {
+      font-size: 12px;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 4px 11px;
+      border-radius: 999px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      transition: border-color 0.2s ease, background-color 0.2s ease;
+    }
+
+    .card:hover { border-color: var(--border-strong); }
+
+    .kpi-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .kpi-val {
+      font-size: 30px;
+      font-weight: 650;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+    }
+
+    .kpi-meta {
+      margin-top: 6px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .card-stat {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .radar-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .radar-svg {
+      width: 100%;
+      max-width: 320px;
+      height: auto;
+      overflow: visible;
+    }
+
+    .axis-list {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 14px;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+
+    .axis-item { display: flex; flex-direction: column; gap: 2px; }
+
+    .axis-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+
+    .axis-score {
+      font-family: var(--font-mono);
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .axis-note {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      line-height: 1.35;
+    }
+
+    .hours-chart {
+      display: grid;
+      grid-template-columns: repeat(24, minmax(0, 1fr));
+      align-items: end;
+      gap: 4px;
+      height: 185px;
+      padding: 12px 0 8px;
+    }
+
+    .hbar-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      height: 100%;
+      gap: 6px;
+    }
+
+    .hbar {
+      width: 100%;
+      border-radius: 3px 3px 1px 1px;
+      background: var(--bar-bg);
+      min-height: 3px;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+
+    .hbar.night { background: var(--night); opacity: 0.72; }
+    .hbar.peak { background: var(--accent); opacity: 1; box-shadow: 0 0 12px var(--accent-soft); }
+    .hbar-col:hover .hbar { opacity: 1; transform: scaleY(1.04); transform-origin: bottom; }
+
+    .htick {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .rhythm-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+      margin-top: 8px;
+    }
+
+    .mini-label { font-size: 11.5px; color: var(--text-muted); }
+    .mini-val {
+      font-size: 15px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bar-list { display: flex; flex-direction: column; gap: 10px; }
+    .bar-row { display: flex; flex-direction: column; gap: 5px; }
+
+    .bar-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12.5px;
+    }
+
+    .bar-name {
+      font-family: var(--font-mono);
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 70%;
+    }
+
+    .bar-num {
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+    }
+
+    .track {
+      height: 5px;
+      width: 100%;
+      background: var(--bar-bg);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+
+    .meme-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .meme-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .meme-tag {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .meme-line {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    @media (max-width: 780px) {
+      .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-2, .meme-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span id="brandText">AI DEV WRAPPED</span>
+      </div>
+      <div class="controls">
+        <button class="btn btn-audio" id="audioBtn" type="button">
+          <span class="eq"><span></span><span></span><span></span></span>
+          <span id="audioLabel"></span>
+        </button>
+        <button class="btn" id="langBtn" type="button"></button>
+        <button class="btn" id="themeBtn" type="button"></button>
+        <button class="btn btn-primary" id="shareBtn" type="button"></button>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="eyebrow" id="heroEyebrow"></div>
+      <h1 class="hero-title" id="heroTitle"></h1>
+      <p class="hero-sub" id="heroSub"></p>
+      <div class="badges" id="badges"></div>
+    </section>
+
+    <section class="kpi-grid" id="kpiGrid"></section>
+
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title" id="radarTitle"></div>
+          <div class="card-stat" id="radarMean"></div>
+        </div>
+        <div class="radar-wrap">
+          <svg class="radar-svg" id="radarSvg" viewBox="0 0 360 290"></svg>
+          <div class="axis-list" id="axisList"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title" id="rhythmTitle"></div>
+          <div class="card-stat" id="tzStat"></div>
+        </div>
+        <div class="hours-chart" id="hoursChart"></div>
+        <div class="rhythm-metrics" id="rhythmMetrics"></div>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title" id="toolsTitle"></div>
+          <div class="card-stat" id="harnessCount"></div>
+        </div>
+        <div class="bar-list" id="toolsList"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title" id="bashTitle"></div>
+          <div class="card-stat" id="bashStatsHead"></div>
+        </div>
+        <div class="bar-list" id="bashList"></div>
+      </div>
+    </section>
+
+    <section class="meme-grid" id="memeGrid"></section>
+
+    <footer class="footer">
+      <span id="footerLeft"></span>
+      <span id="footerRight">Local · Zero-Upload · Sanitized</span>
+    </footer>
+  </div>
+
+  <script id="wrapped-data" type="application/json">__WRAPPED_JSON__</script>
+  <script>
+    (function () {
+      const DATA = JSON.parse(document.getElementById("wrapped-data").textContent);
+      const { facts, persona, default_lang } = DATA;
+      const totals = facts.totals || {};
+      const bdna = facts.bash_dna || {};
+      const inv = facts.inventory || {};
+      const axes = facts.radar_axes || [];
+      const activeHarnesses = (facts.harnesses || []).filter(h => h.detected);
+
+      const urlLang = new URLSearchParams(window.location.search).get("lang");
+      let lang = (urlLang === "en" || urlLang === "zh")
+        ? urlLang
+        : (default_lang === "en" || default_lang === "zh")
+          ? default_lang
+          : ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en");
+
+      const I18N = {
+        zh: {
+          audioOn: "静音",
+          audioOff: "配乐",
+          themeToNotes: "纸感",
+          themeToDark: "暗夜",
+          langToggle: "EN",
+          share: "导出分享图",
+          kpi: ["主会话", "累计工具调用", "Bash 占比", "并发峰值"],
+          kpiMeta: [
+            `+ ${fmt(totals.subagent_sessions)} 子代理`,
+            `${fmt(totals.active_days)} 活跃天`,
+            `${fmt(totals.bash_calls)} 次终端`,
+            `${totals.multi_tool_turn_pct || 0}% 多工具并行`,
+          ],
+          radarTitle: "六维能力图",
+          rhythmTitle: "24 小时节律",
+          nightShare: "夜间占比 (22–05)",
+          peakHour: "峰值时段",
+          topModel: "主力模型",
+          toolsTitle: "工具与 Agent 版图",
+          bashTitle: "终端 Bash 基因",
+          skillsStat: `${inv.skills_installed || 0} 技能 · ${inv.agents_installed || 0} 专家`,
+          bashHead: `&& ${bdna.chained_pct || 0}% · | ${bdna.piped_pct || 0}% · heredoc ${fmt(bdna.heredoc_count)}`,
+          sigStats: "SIGNATURE STATS",
+        },
+        en: {
+          audioOn: "Mute",
+          audioOff: "Audio",
+          themeToNotes: "Paper",
+          themeToDark: "Dark",
+          langToggle: "中文",
+          share: "Share PNG",
+          kpi: ["Sessions", "Tool Calls", "Bash Share", "Peak Parallel"],
+          kpiMeta: [
+            `+ ${fmt(totals.subagent_sessions)} subagents`,
+            `${fmt(totals.active_days)} active days`,
+            `${fmt(totals.bash_calls)} shell calls`,
+            `${totals.multi_tool_turn_pct || 0}% parallel turns`,
+          ],
+          radarTitle: "6-Axis Profile",
+          rhythmTitle: "24h Rhythm",
+          nightShare: "Night Ops (22–05)",
+          peakHour: "Peak Hour",
+          topModel: "Top Model",
+          toolsTitle: "Tools & Agents",
+          bashTitle: "Shell DNA",
+          skillsStat: `${inv.skills_installed || 0} skills · ${inv.agents_installed || 0} agents`,
+          bashHead: `&& ${bdna.chained_pct || 0}% · | ${bdna.piped_pct || 0}% · heredoc ${fmt(bdna.heredoc_count)}`,
+          sigStats: "SIGNATURE STATS",
+        },
+      };
+
+      function fmt(n) {
+        return Number(n || 0).toLocaleString("en-US");
+      }
+
+      function el(tag, cls, text) {
+        const node = document.createElement(tag);
+        if (cls) node.className = cls;
+        if (text !== undefined && text !== null) node.textContent = String(text);
+        return node;
+      }
+
+      function clear(node) {
+        while (node.firstChild) node.removeChild(node.firstChild);
+      }
+
+      function svgNode(tag, attrs) {
+        const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, String(v));
+        return n;
+      }
+
+      let isPlaying = false;
+
+      function renderUI() {
+        const t = I18N[lang];
+        const isEn = lang === "en";
+        document.documentElement.lang = isEn ? "en" : "zh-CN";
+
+        document.getElementById("brandText").textContent =
+          `${facts.year} WRAPPED · ${activeHarnesses.length} HARNESSES`;
+        document.getElementById("langBtn").textContent = t.langToggle;
+        const theme = document.documentElement.getAttribute("data-theme") || "linear";
+        document.getElementById("themeBtn").textContent = theme === "notes" ? t.themeToDark : t.themeToNotes;
+        document.getElementById("audioLabel").textContent = isPlaying ? t.audioOn : t.audioOff;
+        document.getElementById("shareBtn").textContent = t.share;
+
+        document.getElementById("heroEyebrow").textContent =
+          `${persona.archetype_en || "AI DEVELOPER"}${persona.display_name ? " · " + persona.display_name : ""}`;
+        document.getElementById("heroTitle").textContent = isEn
+          ? (persona.archetype_en || persona.archetype_title || "AI Developer")
+          : (persona.archetype_title || persona.archetype_en || "AI 开发者");
+        document.getElementById("heroSub").textContent = isEn
+          ? (persona.one_liner_en || persona.one_liner || "")
+          : (persona.one_liner || persona.one_liner_en || "");
+
+        const badgesEl = document.getElementById("badges");
+        clear(badgesEl);
+        const secBadges = isEn
+          ? (persona.secondary_badges_en || persona.secondary_badges || [])
+          : (persona.secondary_badges || []);
+        secBadges.slice(0, 3).forEach(b => badgesEl.appendChild(el("span", "pill", b)));
+        if (activeHarnesses.length > 0) {
+          const shortNames = activeHarnesses.map(h => {
+            const sn = h.name.replace("Claude Code / Desktop", "Claude").replace("OpenAI ", "");
+            return `${sn} ${fmt(h.sessions)}`;
+          }).join(" · ");
+          badgesEl.appendChild(el("span", "pill", shortNames));
+        }
+
+        const kpiVals = [
+          fmt(totals.sessions),
+          fmt(totals.tool_calls),
+          `${totals.bash_share_pct || 0}%`,
+          `${totals.max_parallel_turn || 1}x`,
+        ];
+        const kpiGrid = document.getElementById("kpiGrid");
+        clear(kpiGrid);
+        t.kpi.forEach((lbl, idx) => {
+          const card = el("div", "card");
+          card.appendChild(el("div", "kpi-label", lbl));
+          card.appendChild(el("div", "kpi-val", kpiVals[idx]));
+          card.appendChild(el("div", "kpi-meta", t.kpiMeta[idx]));
+          kpiGrid.appendChild(card);
+        });
+
+        // Radar
+        document.getElementById("radarTitle").textContent = t.radarTitle;
+        const meanScore = axes.length ? Math.round(axes.reduce((a, b) => a + b.score, 0) / axes.length) : 0;
+        document.getElementById("radarMean").textContent = `AVG ${meanScore}`;
+
+        const radarSvg = document.getElementById("radarSvg");
+        clear(radarSvg);
+        const cx = 180, cy = 145, R = 90;
+
+        [0.25, 0.5, 0.75, 1].forEach(r => {
+          const pts = axes.map((_, i) => {
+            const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
+            return `${(cx + R * r * Math.cos(ang)).toFixed(1)},${(cy + R * r * Math.sin(ang)).toFixed(1)}`;
+          }).join(" ");
+          radarSvg.appendChild(svgNode("polygon", {
+            points: pts, fill: "none", stroke: "var(--border)", "stroke-width": r === 1 ? "1.2" : "1",
+          }));
+        });
+
+        axes.forEach((ax, i) => {
+          const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
+          radarSvg.appendChild(svgNode("line", {
+            x1: cx, y1: cy,
+            x2: (cx + R * Math.cos(ang)).toFixed(1),
+            y2: (cy + R * Math.sin(ang)).toFixed(1),
+            stroke: "var(--border)", "stroke-width": "1",
+          }));
+          const lx = cx + (R + 22) * Math.cos(ang);
+          const ly = cy + (R + 22) * Math.sin(ang);
+          const anchor = Math.abs(Math.cos(ang)) < 0.2 ? "middle" : (Math.cos(ang) > 0 ? "start" : "end");
+          const txt = svgNode("text", {
+            x: lx.toFixed(1), y: (ly + 4).toFixed(1),
+            "text-anchor": anchor, fill: "var(--text-secondary)",
+            "font-size": isEn ? "10.5" : "11.5", "font-family": "var(--font-sans)",
+          });
+          const lbl = isEn ? (ax.label_en || ax.label) : ax.label;
+          txt.textContent = `${lbl} ${ax.score}`;
+          radarSvg.appendChild(txt);
+        });
+
+        const polyPts = axes.map((ax, i) => {
+          const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
+          const dist = R * (Math.max(5, ax.score) / 100);
+          return `${(cx + dist * Math.cos(ang)).toFixed(1)},${(cy + dist * Math.sin(ang)).toFixed(1)}`;
+        }).join(" ");
+        radarSvg.appendChild(svgNode("polygon", {
+          points: polyPts, fill: "var(--accent-soft)", stroke: "var(--accent)",
+          "stroke-width": "2", "stroke-linejoin": "round",
+        }));
+        axes.forEach((ax, i) => {
+          const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
+          const dist = R * (Math.max(5, ax.score) / 100);
+          radarSvg.appendChild(svgNode("circle", {
+            cx: (cx + dist * Math.cos(ang)).toFixed(1),
+            cy: (cy + dist * Math.sin(ang)).toFixed(1),
+            r: "3.5", fill: "var(--accent)",
+          }));
+        });
+
+        const axisList = document.getElementById("axisList");
+        clear(axisList);
+        const notes = isEn ? (persona.axis_notes_en || persona.axis_notes || {}) : (persona.axis_notes || {});
+        axes.forEach(ax => {
+          const item = el("div", "axis-item");
+          const row = el("div", "axis-row");
+          row.appendChild(el("span", "", isEn ? (ax.label_en || ax.label) : ax.label));
+          row.appendChild(el("span", "axis-score", ax.score));
+          item.appendChild(row);
+          item.appendChild(el("div", "axis-note", notes[ax.key] || ""));
+          axisList.appendChild(item);
+        });
+
+        // 24h Rhythm
+        document.getElementById("rhythmTitle").textContent = t.rhythmTitle;
+        document.getElementById("tzStat").textContent = facts.timezone_label || "LOCAL";
+        const hours = facts.hours || new Array(24).fill(0);
+        const maxH = Math.max(1, ...hours);
+        const peakH = facts.peak_hour ?? 0;
+        const hoursChart = document.getElementById("hoursChart");
+        clear(hoursChart);
+        hours.forEach((val, h) => {
+          const col = el("div", "hbar-col");
+          col.title = `${String(h).padStart(2, "0")}:00 · ${fmt(val)}`;
+          const bar = el("div", "hbar");
+          bar.style.height = `${val > 0 ? Math.max(6, Math.round((val / maxH) * 100)) : 2}%`;
+          if (h === peakH && val > 0) bar.classList.add("peak");
+          else if (h >= 22 || h <= 5) bar.classList.add("night");
+          col.appendChild(bar);
+          col.appendChild(el("span", "htick", h % 6 === 0 ? String(h).padStart(2, "0") : ""));
+          hoursChart.appendChild(col);
+        });
+
+        const rm = document.getElementById("rhythmMetrics");
+        clear(rm);
+        [
+          { k: t.nightShare, v: `${facts.night_owl_pct || 0}%` },
+          { k: t.peakHour, v: `${String(peakH).padStart(2, "0")}:00` },
+          { k: t.topModel, v: (facts.top_models && facts.top_models[0] ? facts.top_models[0].name : "—") },
+        ].forEach(m => {
+          const box = el("div");
+          box.appendChild(el("div", "mini-label", m.k));
+          box.appendChild(el("div", "mini-val", m.v));
+          rm.appendChild(box);
+        });
+
+        // Tools & Bash
+        document.getElementById("toolsTitle").textContent = t.toolsTitle;
+        document.getElementById("harnessCount").textContent = t.skillsStat;
+        const toolsList = document.getElementById("toolsList");
+        clear(toolsList);
+        const topTools = (facts.top_tools || []).slice(0, 7);
+        const maxTool = Math.max(1, ...topTools.map(x => x.count));
+        topTools.forEach(item => {
+          const row = el("div", "bar-row");
+          const top = el("div", "bar-top");
+          top.appendChild(el("span", "bar-name", item.name));
+          top.appendChild(el("span", "bar-num", `${fmt(item.count)} (${item.pct}%)`));
+          const track = el("div", "track");
+          const fill = el("div", "fill");
+          fill.style.width = `${Math.max(2, (item.count / maxTool) * 100)}%`;
+          track.appendChild(fill);
+          row.appendChild(top);
+          row.appendChild(track);
+          toolsList.appendChild(row);
+        });
+
+        document.getElementById("bashTitle").textContent = t.bashTitle;
+        document.getElementById("bashStatsHead").textContent = t.bashHead;
+        const bashList = document.getElementById("bashList");
+        clear(bashList);
+        const topCmds = (bdna.top_commands || []).slice(0, 7);
+        const maxCmd = Math.max(1, ...topCmds.map(c => c.count));
+        topCmds.forEach(c => {
+          const row = el("div", "bar-row");
+          const top = el("div", "bar-top");
+          top.appendChild(el("span", "bar-name", c.name));
+          top.appendChild(el("span", "bar-num", fmt(c.count)));
+          const track = el("div", "track");
+          const fill = el("div", "fill");
+          fill.style.width = `${Math.max(2, (c.count / maxCmd) * 100)}%`;
+          track.appendChild(fill);
+          row.appendChild(top);
+          row.appendChild(track);
+          bashList.appendChild(row);
+        });
+
+        // Memes
+        const memeGrid = document.getElementById("memeGrid");
+        clear(memeGrid);
+        (persona.memes || []).forEach(m => {
+          const card = el("div", "meme-card");
+          card.appendChild(el("div", "meme-tag", isEn ? (m.tag_en || m.tag) : m.tag));
+          card.appendChild(el("div", "meme-line", isEn ? (m.line_en || m.line) : m.line));
+          memeGrid.appendChild(card);
+        });
+
+        document.getElementById("footerLeft").textContent =
+          `GENERATED ${(facts.generated_at || "").replace("T", " ")}`;
+      }
+
+      document.getElementById("langBtn").addEventListener("click", () => {
+        lang = lang === "zh" ? "en" : "zh";
+        renderUI();
+      });
+
+      document.getElementById("themeBtn").addEventListener("click", () => {
+        const html = document.documentElement;
+        const next = html.getAttribute("data-theme") === "notes" ? "linear" : "notes";
+        html.setAttribute("data-theme", next);
+        renderUI();
+      });
+
+      // Zero-Dependency Ambient WebAudio Synth
+      let audioCtx = null;
+      let masterGain = null;
+      let userMuted = false;
+      let timerId = null;
+      const audioBtn = document.getElementById("audioBtn");
+      const SCALE = [293.66, 329.63, 369.99, 440.0, 493.88, 587.33, 659.25];
+      let stepIdx = 0;
+
+      function playNote(freq, dur) {
+        if (!audioCtx || !masterGain || !isPlaying) return;
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const filter = audioCtx.createBiquadFilter();
+        const g = audioCtx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, now);
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(780, now);
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.16, now + 0.18);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+        osc.connect(filter);
+        filter.connect(g);
+        g.connect(masterGain);
+        osc.start(now);
+        osc.stop(now + dur + 0.05);
+      }
+
+      function startMusic() {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        if (!audioCtx) {
+          audioCtx = new Ctx();
+          masterGain = audioCtx.createGain();
+          masterGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+          masterGain.connect(audioCtx.destination);
+        }
+        if (audioCtx.state === "suspended") audioCtx.resume();
+        isPlaying = true;
+        masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+        masterGain.gain.setValueAtTime(Math.max(0.0001, masterGain.gain.value), audioCtx.currentTime);
+        masterGain.gain.exponentialRampToValueAtTime(0.22, audioCtx.currentTime + 1.0);
+        audioBtn.classList.add("playing");
+        renderUI();
+
+        if (!timerId) {
+          const pattern = [0, 2, 4, 3, 5, 2, 1, 4];
+          const tick = () => {
+            if (!isPlaying) return;
+            playNote(SCALE[pattern[stepIdx % pattern.length]], 3.2);
+            if (stepIdx % 4 === 0) playNote(SCALE[0] / 2, 4.5);
+            stepIdx += 1;
+          };
+          tick();
+          timerId = setInterval(tick, 1450);
+        }
+      }
+
+      function stopMusic() {
+        isPlaying = false;
+        if (audioCtx && masterGain) {
+          masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+          masterGain.gain.setValueAtTime(Math.max(0.0001, masterGain.gain.value), audioCtx.currentTime);
+          masterGain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.35);
+        }
+        audioBtn.classList.remove("playing");
+        renderUI();
+      }
+
+      audioBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (isPlaying) {
+          userMuted = true;
+          stopMusic();
+        } else {
+          userMuted = false;
+          startMusic();
+        }
+      });
+
+      document.addEventListener("pointerdown", function onceStart(e) {
+        if (e.target && e.target.closest && e.target.closest("#audioBtn")) return;
+        document.removeEventListener("pointerdown", onceStart);
+        if (!userMuted && !isPlaying) startMusic();
+      });
+
+      // 2x Retina Share Card PNG Exporter (respects active language + theme)
+      document.getElementById("shareBtn").addEventListener("click", () => {
+        const isNotes = document.documentElement.getAttribute("data-theme") === "notes";
+        const isEn = lang === "en";
+        const t = I18N[lang];
+        const W = 1200, H = 1520;
+        const canvas = document.createElement("canvas");
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext("2d");
+
+        const bg = isNotes ? "#fbfaf7" : "#08090a";
+        const cardBg = isNotes ? "#ffffff" : "#101216";
+        const border = isNotes ? "rgba(28,25,23,0.12)" : "rgba(255,255,255,0.10)";
+        const text = isNotes ? "#1c1917" : "#f7f8f8";
+        const muted = isNotes ? "#68625c" : "#8a8f98";
+        const accent = isNotes ? "#c26d18" : "#7c8cff";
+        const accentSoft = isNotes ? "rgba(194,109,24,0.16)" : "rgba(124,140,255,0.20)";
+
+        function drawRoundRect(x, y, w, h, r) {
+          ctx.beginPath();
+          ctx.moveTo(x + r, y);
+          ctx.arcTo(x + w, y, x + w, y + h, r);
+          ctx.arcTo(x + w, y + h, x, y + h, r);
+          ctx.arcTo(x, y + h, x, y, r);
+          ctx.arcTo(x, y, x + w, y, r);
+          ctx.closePath();
+        }
+
+        function drawWrappedText(str, x, y, maxW, lineH, maxLines) {
+          const tokens = String(str || "").match(/[\u4e00-\u9fff]|[^\u4e00-\u9fff\s]+\s*|\s+/g) || [];
+          let cur = "", row = 0;
+          for (const tok of tokens) {
+            if (cur && ctx.measureText(cur + tok).width > maxW) {
+              ctx.fillText(cur.trimEnd(), x, y + row * lineH);
+              row += 1;
+              if (row >= maxLines) return;
+              cur = tok.trimStart();
+            } else {
+              cur += tok;
+            }
+          }
+          if (cur && row < maxLines) ctx.fillText(cur.trimEnd(), x, y + row * lineH);
+        }
+
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.fillStyle = accent;
+        ctx.font = "600 22px ui-monospace, Menlo, monospace";
+        ctx.fillText(`${facts.year} AI DEVELOPER WRAPPED · ${(persona.archetype_en || "").toUpperCase()}`, 72, 90, 1056);
+
+        ctx.fillStyle = text;
+        ctx.font = "700 60px -apple-system, BlinkMacSystemFont, PingFang SC, sans-serif";
+        ctx.fillText(isEn ? (persona.archetype_en || persona.archetype_title) : (persona.archetype_title || "AI 开发者"), 72, 168, 1056);
+
+        ctx.fillStyle = muted;
+        ctx.font = "400 24px -apple-system, BlinkMacSystemFont, PingFang SC, sans-serif";
+        const subText = isEn ? (persona.one_liner_en || persona.one_liner || "") : (persona.one_liner || "");
+        drawWrappedText(subText, 72, 222, 1056, 33, 2);
+
+        const kpiVals = [
+          fmt(totals.sessions),
+          fmt(totals.tool_calls),
+          `${totals.bash_share_pct || 0}%`,
+          `${totals.max_parallel_turn || 1}x`,
+        ];
+        const kpiY = 312, cw = 250, ch = 128, gap = 18;
+        t.kpi.forEach((lbl, idx) => {
+          const x = 72 + idx * (cw + gap);
+          ctx.fillStyle = cardBg;
+          ctx.strokeStyle = border;
+          ctx.lineWidth = 2;
+          drawRoundRect(x, kpiY, cw, ch, 18);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = muted;
+          ctx.font = "500 20px -apple-system, sans-serif";
+          ctx.fillText(lbl, x + 22, kpiY + 38);
+
+          ctx.fillStyle = text;
+          ctx.font = "700 42px -apple-system, sans-serif";
+          ctx.fillText(kpiVals[idx], x + 22, kpiY + 92);
+        });
+
+        const rx = 72, ry = 468, rw = 1056, rh = 440;
+        ctx.fillStyle = cardBg;
+        ctx.strokeStyle = border;
+        drawRoundRect(rx, ry, rw, rh, 20);
+        ctx.fill();
+        ctx.stroke();
+
+        const rcx = 340, rcy = 690, rR = 145;
+        [0.33, 0.66, 1].forEach(r => {
+          ctx.beginPath();
+          axes.forEach((_, i) => {
+            const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
+            const px = rcx + rR * r * Math.cos(ang);
+            const py = rcy + rR * r * Math.sin(ang);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.closePath();
+          ctx.strokeStyle = border;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+
+        ctx.beginPath();
+        axes.forEach((ax, i) => {
+          const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
+          const dist = rR * (Math.max(5, ax.score) / 100);
+          const px = rcx + dist * Math.cos(ang);
+          const py = rcy + dist * Math.sin(ang);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.closePath();
+        ctx.fillStyle = accentSoft;
+        ctx.fill();
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        axes.forEach((ax, i) => {
+          const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
+          const lx = rcx + (rR + 30) * Math.cos(ang);
+          const ly2 = rcy + (rR + 30) * Math.sin(ang);
+          ctx.fillStyle = text;
+          ctx.font = "600 18px -apple-system, sans-serif";
+          ctx.textAlign = Math.abs(Math.cos(ang)) < 0.2 ? "center" : (Math.cos(ang) > 0 ? "left" : "right");
+          const lbl = isEn ? (ax.label_en || ax.label) : ax.label;
+          ctx.fillText(`${lbl} ${ax.score}`, lx, ly2 + 6);
+        });
+        ctx.textAlign = "left";
+
+        ctx.fillStyle = muted;
+        ctx.font = "600 22px ui-monospace, monospace";
+        ctx.fillText(t.sigStats, 600, 522);
+        const topCmds = (bdna.top_commands || []).slice(0, 4).map(c => c.name).join(" · ") || "—";
+        const peakH = facts.peak_hour ?? 0;
+        const shortHarnesses = activeHarnesses
+          .map(h => h.name.replace("Claude Code / Desktop", "Claude").replace("OpenAI ", ""))
+          .join(" · ") || "—";
+        const sigs = [
+          `${t.peakHour}: ${String(peakH).padStart(2, "0")}:00 (${facts.night_owl_pct || 0}%)`,
+          `Shell: ${topCmds}`,
+          `Model: ${facts.top_models && facts.top_models[0] ? facts.top_models[0].name : "—"}`,
+          `Agents: ${shortHarnesses}`,
+        ];
+        ctx.fillStyle = text;
+        ctx.font = "500 21px -apple-system, sans-serif";
+        sigs.forEach((s, i) => drawWrappedText(s, 600, 584 + i * 66, 480, 28, 2));
+
+        const memes = (persona.memes || []).slice(0, 3);
+        memes.forEach((m, i) => {
+          const my = 940 + i * 165;
+          ctx.fillStyle = cardBg;
+          ctx.strokeStyle = border;
+          drawRoundRect(72, my, 1056, 142, 18);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = accent;
+          ctx.font = "600 22px ui-monospace, monospace";
+          ctx.fillText(isEn ? (m.tag_en || m.tag) : m.tag, 102, my + 44, 990);
+
+          ctx.fillStyle = text;
+          ctx.font = "400 23px -apple-system, sans-serif";
+          const mline = isEn ? (m.line_en || m.line) : m.line;
+          drawWrappedText(mline, 102, my + 86, 990, 32, 2);
+        });
+
+        ctx.fillStyle = muted;
+        ctx.font = "500 20px ui-monospace, monospace";
+        ctx.fillText("ai-dev-wrapped · 100% local & sanitized", 72, 1475);
+
+        const link = document.createElement("a");
+        link.download = `ai-dev-wrapped-${facts.year}-${lang}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      });
+
+      renderUI();
+    })();
+  </script>
+</body>
+</html>
