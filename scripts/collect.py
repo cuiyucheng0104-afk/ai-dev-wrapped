@@ -1539,17 +1539,15 @@ def _count_unique_ecosystem_skills(home: Path, claude_count: int) -> int:
 
 
 def clamp_score(val: float) -> int:
-    return max(0, min(100, int(round(val))))
+    return max(0, min(300, int(round(val))))
 
 
 def compute_radar_and_fallback(facts: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Compute 6 fixed universal viral radar scores (0..100) and punchy fallback persona."""
+    """Compute calibrated universal 6-axis scores (0.8x baseline = 70; >100 breaks box) + neutral fallback."""
     totals = facts["totals"]
     inv = facts["inventory"]
     bdna = facts["bash_dna"]
-    sessions_total = max(1, totals["sessions"])
 
-    sub_ratio = totals["subagent_sessions"] / sessions_total
     multi_pct = totals["multi_tool_turn_pct"]
     bash_pct = totals["bash_share_pct"]
     night_pct = facts["night_owl_pct"]
@@ -1558,42 +1556,52 @@ def compute_radar_and_fallback(facts: dict[str, Any]) -> tuple[list[dict[str, An
     )
     detected_harnesses = active_harnesses or sum(1 for h in facts["harnesses"] if h["detected"])
     test_cmds = bdna.get("test_cmd_count", 0)
-    total_gear = inv["skills_installed"] + inv["agents_installed"] + facts["distinct_tools"]
 
-    # 6 fixed universal dimensions shared across all users (never tailored per user)
-    night_owl = clamp_score(
-        12 + 68 * min(1.0, night_pct / 60.0) + 20 * min(1.0, (1.0 if facts["peak_hour"] in (22, 23, 0, 1, 2, 3, 4, 5) and totals["tool_calls"] > 0 else 0.0))
-    )
+    # Calibrated around fixed reference anchors where 0.8x = 70 tier, 1.0x = ~88, and >1.14x breaks >100
+    night_peak_factor = 1.0 if (facts["peak_hour"] in (22, 23, 0, 1, 2, 3, 4, 5) or night_pct == 0) else 0.72
+    night_owl = clamp_score(87.5 * (night_pct / 52.3) * night_peak_factor)
     boss_energy = clamp_score(
-        15
-        + (22 if inv["auto_or_bypass"] else 4)
-        + 24 * min(1.0, math.log1p(sub_ratio) / math.log1p(8.0))
-        + 20 * min(1.0, math.log1p(facts["loop_or_cron_count"]) / math.log1p(300))
-        + 19 * min(1.0, multi_pct / 22.0)
+        87.5
+        * (
+            0.40 * (totals["subagent_sessions"] / 4777.0)
+            + 0.25 * (multi_pct / 14.4)
+            + 0.20 * (totals["max_parallel_turn"] / 26.0)
+            + 0.15 * (facts["loop_or_cron_count"] / 561.0)
+        )
     )
     gear_hoarder = clamp_score(
-        12
-        + 30 * min(1.0, detected_harnesses / 6.0)
-        + 34 * min(1.0, math.log1p(total_gear) / math.log1p(450))
-        + 24 * min(1.0, math.log1p(inv["plugins_unused"] + inv["plugins_total"]) / math.log1p(50))
+        87.5
+        * (
+            0.35 * (inv["skills_installed"] / 297.0)
+            + 0.25 * (inv["agents_installed"] / 162.0)
+            + 0.25 * (detected_harnesses / 9.0)
+            + 0.15 * ((inv["plugins_total"] + inv["plugins_unused"]) / 56.0)
+        )
     )
     trust_issues = clamp_score(
-        18
-        + 34 * min(1.0, math.log1p(test_cmds) / math.log1p(2500))
-        + 26 * min(1.0, math.log1p(facts["verification_signals"]) / math.log1p(120))
-        + 22 * min(1.0, math.log1p(bdna["rtk_proxy_count"]) / math.log1p(1500))
+        87.5
+        * (
+            0.45 * (test_cmds / 3346.0)
+            + 0.30 * (bdna["rtk_proxy_count"] / 2389.0)
+            + 0.25 * (facts["verification_signals"] / 121.0)
+        )
     )
     chaos_grit = clamp_score(
-        16
-        + 36 * min(1.0, bash_pct / 75.0)
-        + 24 * min(1.0, bdna["piped_pct"] / 72.0)
-        + 24 * min(1.0, math.log1p(bdna["heredoc_count"] + facts["distinct_projects"]) / math.log1p(15000))
+        87.5
+        * (
+            0.40 * (totals["bash_calls"] / 167765.0)
+            + 0.25 * (bdna["heredoc_count"] / 28505.0)
+            + 0.20 * (bdna["piped_pct"] / 68.0)
+            + 0.15 * (facts["distinct_projects"] / 774.0)
+        )
     )
     ai_addict = clamp_score(
-        10
-        + 32 * min(1.0, totals["active_days"] / 180.0)
-        + 30 * min(1.0, math.log1p(totals["tool_calls"]) / math.log1p(180000))
-        + 28 * min(1.0, math.log1p(totals["sessions"] + totals["subagent_sessions"]) / math.log1p(4000))
+        87.5
+        * (
+            0.40 * (totals["tool_calls"] / 239187.0)
+            + 0.30 * (totals["sessions"] / 1151.0)
+            + 0.30 * (totals["active_days"] / 226.0)
+        )
     )
 
     axes = [
@@ -1605,36 +1613,37 @@ def compute_radar_and_fallback(facts: dict[str, Any]) -> tuple[list[dict[str, An
         {"key": "ai_addict", "label": "含AI量", "label_en": "AI Addict", "score": ai_addict},
     ]
 
-    # Keep fallback strictly neutral and factual: bespoke personality/archetype analysis
+    # Keep fallback strictly neutral and factual: bespoke personality & verdict analysis
     # is delegated to the user's own AI agent via the prompt in SKILL.md.
     peak_hr = facts["peak_hour"]
     if totals["sessions"] == 0 and totals["tool_calls"] == 0:
+        axes = [dict(a, score=0) for a in axes]
         fallback = {
             "archetype_id": "wrapped-snapshot",
             "archetype_title": f"{facts['year']} AI 档案快照",
             "archetype_en": f"{facts['year']} AI Snapshot",
-            "one_liner": "暂未扫描到本地 Agent 行动记录，在对话里唤醒 AI 即可解锁你的专属人格。",
-            "one_liner_en": "No local agent logs found yet — run this skill with an AI agent once active.",
+            "one_liner": "暂未扫描到本地 Agent 行动记录，唤醒 AI 对话即可解锁。",
+            "one_liner_en": "No local agent logs found yet — chat with an AI agent to unlock.",
             "secondary_badges": ["待解锁记录", "100% 本地统计"],
             "secondary_badges_en": ["No Logs Yet", "100% Local"],
             "memes": [
                 {
                     "tag": "0 场对话",
                     "tag_en": "0 Sessions",
-                    "line": "本机暂未检测到该年份的 Agent 会话日志（可尝试加上 --all-time 参数）。",
-                    "line_en": "No agent sessions recorded for this year yet (try --all-time).",
+                    "line": "暂无该年份会话记录（可试 --all-time）。",
+                    "line_en": "No sessions recorded this year yet (try --all-time).",
                 },
                 {
                     "tag": "0 次调用",
                     "tag_en": "0 Tool Calls",
-                    "line": "等你在终端或编辑器里让 AI 跑几轮后，这里会自动填满你的真实战绩。",
-                    "line_en": "Once an agent runs tools in your workspace, your real usage populates here.",
+                    "line": "让 AI 跑几轮后这里会自动填满战绩。",
+                    "line_en": "Run a few agent turns to populate your telemetry.",
                 },
                 {
                     "tag": f"{inv['skills_installed']:,} 项本地配置",
                     "tag_en": f"{inv['skills_installed']:,} Local Skills",
-                    "line": f"检测到 {detected_harnesses} 个本地 Harness、{inv['skills_installed']:,} 个已安装技能。",
-                    "line_en": f"Detected {detected_harnesses} harnesses and {inv['skills_installed']:,} installed skills.",
+                    "line": f"已安装 {inv['skills_installed']:,} 个技能配置。",
+                    "line_en": f"Detected {inv['skills_installed']:,} installed skills.",
                 },
             ],
             "axis_notes": {
@@ -1643,43 +1652,48 @@ def compute_radar_and_fallback(facts: dict[str, Any]) -> tuple[list[dict[str, An
                 "gear_hoarder": f"已装 {inv['skills_installed']:,} 项技能 · {inv['plugins_total']:,} 插件",
                 "trust_issues": "暂无测试校验记录",
                 "chaos_grit": "暂无终端调用记录",
-                "ai_addict": "等待开启今年第 1 次 AI 对话",
+                "ai_addict": "等待开启第 1 次 AI 对话",
             },
             "axis_notes_en": {
-                "night_owl": "No late-night runs logged yet",
-                "boss_energy": "No subagent bursts logged yet",
-                "gear_hoarder": f"{inv['skills_installed']:,} skills · {inv['plugins_total']:,} plugins found",
-                "trust_issues": "No verification runs logged yet",
-                "chaos_grit": "No shell tool calls logged yet",
-                "ai_addict": "Ready for your first AI session",
+                "night_owl": "No late-night runs yet",
+                "boss_energy": "No subagent bursts yet",
+                "gear_hoarder": f"{inv['skills_installed']:,} skills · {inv['plugins_total']:,} plugins",
+                "trust_issues": "No verification runs yet",
+                "chaos_grit": "No shell calls yet",
+                "ai_addict": "Ready for your 1st session",
             },
+            "verdict_level": "待开服新人",
+            "verdict_level_en": "Fresh Save",
+            "verdict_body": "装备先摆好了，跑出第一轮对话就算正式入局，加油。",
+            "verdict_body_en": "Gear is staged — kick off your first session and build momentum.",
         }
         return axes, fallback
 
+    mean_score = round(sum(a["score"] for a in axes) / 6)
     memes: list[dict[str, str]] = [
         {
             "tag": f"夜间 {night_pct:.0f}% · 峰值 {peak_hr:02d}:00",
             "tag_en": f"{night_pct:.0f}% Night · Peak {peak_hr:02d}:00",
-            "line": f"全天最活跃在 {peak_hr:02d}:00，其中 {night_pct:.1f}% 的 AI 动作发生在 22:00–05:00。",
-            "line_en": f"Activity peaks at {peak_hr:02d}:00, with {night_pct:.1f}% occurring between 22:00 and 05:00.",
+            "line": f"全天最活跃 {peak_hr:02d}:00，{night_pct:.1f}% 发生在深夜。",
+            "line_en": f"Peak at {peak_hr:02d}:00 with {night_pct:.1f}% after midnight.",
         },
         {
             "tag": f"Grep={inv['grep_calls']:,} · Bash={totals['bash_calls']:,}",
             "tag_en": f"Grep={inv['grep_calls']:,} · Bash={totals['bash_calls']:,}",
-            "line": f"原生 Grep 工具调用 {inv['grep_calls']:,} 次，终端 Bash 调用 {totals['bash_calls']:,} 次（占 {bash_pct:.1f}%）。",
-            "line_en": f"Called built-in Grep {inv['grep_calls']:,} times vs {totals['bash_calls']:,} Bash calls ({bash_pct:.1f}%).",
+            "line": f"原生 Grep {inv['grep_calls']:,} 次，终端 Bash {totals['bash_calls']:,} 次。",
+            "line_en": f"Built-in Grep {inv['grep_calls']:,}x vs {totals['bash_calls']:,}x Bash.",
         },
         {
             "tag": f"{inv['skills_installed']:,} 技能 · {inv['plugins_unused']:,} 未触发",
             "tag_en": f"{inv['skills_installed']:,} Skills · {inv['plugins_unused']:,} Unused",
-            "line": f"本地安装 {inv['skills_installed']:,} 个技能与 {inv['plugins_total']:,} 个插件，其中 {inv['plugins_unused']:,} 个尚无使用记录。",
-            "line_en": f"{inv['skills_installed']:,} skills & {inv['plugins_total']:,} plugins installed ({inv['plugins_unused']:,} untouched).",
+            "line": f"装了 {inv['skills_installed']:,} 技能 / {inv['plugins_total']:,} 插件（{inv['plugins_unused']:,} 未用）。",
+            "line_en": f"{inv['skills_installed']:,} skills & {inv['plugins_total']:,} plugins ({inv['plugins_unused']:,} idle).",
         },
         {
-            "tag": f"峰值并发 {totals['max_parallel_turn']}x · 活跃 {totals['active_days']:,} 天",
+            "tag": f"峰值 {totals['max_parallel_turn']}x · 活跃 {totals['active_days']:,} 天",
             "tag_en": f"{totals['max_parallel_turn']}x Peak · {totals['active_days']:,} Days",
-            "line": f"跨 {facts['distinct_projects']:,} 个项目与 {detected_harnesses} 个 Agent，单轮最高并发 {totals['max_parallel_turn']} 次工具调用。",
-            "line_en": f"Spanned {facts['distinct_projects']:,} workspaces and {detected_harnesses} harnesses, up to {totals['max_parallel_turn']}x parallel calls.",
+            "line": f"跨 {facts['distinct_projects']:,} 个项目，峰值 {totals['max_parallel_turn']}x 并行。",
+            "line_en": f"Spanned {facts['distinct_projects']:,} projects up to {totals['max_parallel_turn']}x parallel.",
         },
     ]
 
@@ -1687,35 +1701,39 @@ def compute_radar_and_fallback(facts: dict[str, Any]) -> tuple[list[dict[str, An
         "archetype_id": "wrapped-snapshot",
         "archetype_title": f"{facts['year']} AI 使用实录",
         "archetype_en": f"{facts['year']} AI Dev Snapshot",
-        "one_liner": f"跨 {detected_harnesses} 个 Agent 完成 {totals['sessions']:,} 场对话、{totals['tool_calls']:,} 次调用，最晚峰值停在 {peak_hr:02d}:00。",
-        "one_liner_en": f"{totals['sessions']:,} sessions and {totals['tool_calls']:,} tool calls across {detected_harnesses} harnesses, peaking at {peak_hr:02d}:00.",
+        "one_liner": f"跨 {detected_harnesses} 个助手完成 {totals['sessions']:,} 场对话、{totals['tool_calls']:,} 次调用。",
+        "one_liner_en": f"{totals['sessions']:,} sessions & {totals['tool_calls']:,} calls across {detected_harnesses} assistants.",
         "secondary_badges": [
-            f"{detected_harnesses} 个本地 Agent",
+            f"{detected_harnesses} 个助手",
             f"{totals['active_days']:,} 活跃天",
-            f"峰值 {peak_hr:02d}:00",
+            f"均值 {mean_score} 分",
         ],
         "secondary_badges_en": [
-            f"{detected_harnesses} Harnesses",
+            f"{detected_harnesses} Assistants",
             f"{totals['active_days']:,} Active Days",
-            f"Peak {peak_hr:02d}:00",
+            f"AVG {mean_score}",
         ],
         "memes": memes,
         "axis_notes": {
-            "night_owl": f"{night_pct:.1f}% 夜间动作 · 峰值 {peak_hr:02d}:00",
-            "boss_energy": f"{totals['sessions']:,} 轮对话带出 {totals['subagent_sessions']:,} 个子代理",
-            "gear_hoarder": f"装了 {inv['skills_installed']:,} 技能与 {inv['plugins_total']:,} 插件",
-            "trust_issues": f"{test_cmds:,} 次测试指令 · {bdna['rtk_proxy_count']:,} 次原始查看",
-            "chaos_grit": f"{bash_pct:.1f}% 走终端 · 管道率 {bdna['piped_pct']:.1f}%",
-            "ai_addict": f"全年活跃 {totals['active_days']:,} 天 · 总计 {totals['tool_calls']:,} 次",
+            "night_owl": f"{night_pct:.1f}%深夜 · {peak_hr:02d}:00峰值",
+            "boss_energy": f"{totals['sessions']:,}场带{totals['subagent_sessions']:,}分身",
+            "gear_hoarder": f"{inv['skills_installed']:,}技能 · {inv['plugins_total']:,}插件",
+            "trust_issues": f"{test_cmds:,}测试 · {bdna['rtk_proxy_count']:,}复查",
+            "chaos_grit": f"{bash_pct:.1f}%终端 · 管道{bdna['piped_pct']:.1f}%",
+            "ai_addict": f"活跃{totals['active_days']:,}天 · {totals['tool_calls']:,}次",
         },
         "axis_notes_en": {
-            "night_owl": f"{night_pct:.1f}% after-hours · peak {peak_hr:02d}:00",
-            "boss_energy": f"{totals['sessions']:,} sessions · {totals['subagent_sessions']:,} subagents",
+            "night_owl": f"{night_pct:.1f}% night · peak {peak_hr:02d}:00",
+            "boss_energy": f"{totals['sessions']:,} runs · {totals['subagent_sessions']:,} agents",
             "gear_hoarder": f"{inv['skills_installed']:,} skills · {inv['plugins_total']:,} plugins",
-            "trust_issues": f"{test_cmds:,} test runs · {bdna['rtk_proxy_count']:,} raw checks",
-            "chaos_grit": f"{bash_pct:.1f}% raw shell · {bdna['piped_pct']:.1f}% piped",
-            "ai_addict": f"{totals['active_days']:,} active days · {totals['tool_calls']:,} calls",
+            "trust_issues": f"{test_cmds:,} tests · {bdna['rtk_proxy_count']:,} raw",
+            "chaos_grit": f"{bash_pct:.1f}% shell · {bdna['piped_pct']:.1f}% pipe",
+            "ai_addict": f"{totals['active_days']:,} days · {totals['tool_calls']:,} calls",
         },
+        "verdict_level": f"六维均分 {mean_score}",
+        "verdict_level_en": f"AVG {mean_score} Tier",
+        "verdict_body": f"跨 {detected_harnesses} 家工具跑出 {totals['tool_calls']:,} 次协作——再砍掉冗余，效率还能起飞。",
+        "verdict_body_en": f"{totals['tool_calls']:,} actions across {detected_harnesses} harnesses — trim the bloat and keep pushing.",
     }
     return axes, fallback
 

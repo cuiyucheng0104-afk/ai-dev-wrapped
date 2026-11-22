@@ -435,6 +435,40 @@
       line-height: 1.55;
     }
 
+    .verdict-card {
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      margin-bottom: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .verdict-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .verdict-level {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .verdict-body {
+      font-size: 15px;
+      color: var(--text);
+      line-height: 1.65;
+    }
+
     .footer {
       display: flex;
       justify-content: space-between;
@@ -486,7 +520,7 @@
           <div class="card-stat" id="radarMean"></div>
         </div>
         <div class="radar-wrap">
-          <svg class="radar-svg" id="radarSvg" viewBox="0 0 360 290"></svg>
+          <svg class="radar-svg" id="radarSvg" viewBox="0 0 380 310"></svg>
           <div class="axis-list" id="axisList"></div>
         </div>
       </div>
@@ -520,6 +554,7 @@
     </section>
 
     <section class="meme-grid" id="memeGrid"></section>
+    <section class="verdict-card" id="verdictCard" hidden></section>
 
     <footer class="footer">
       <span id="footerLeft"></span>
@@ -578,6 +613,7 @@
           skillsStat: `${inv.skills_installed || 0} 装备 · ${inv.agents_installed || 0} 分身`,
           bashHead: `&& ${bdna.chained_pct || 0}% · | ${bdna.piped_pct || 0}% · heredoc ${fmt(bdna.heredoc_count)}`,
           sigStats: "SIGNATURE STATS",
+          verdictTag: "段位锐评",
         },
         en: {
           audioOn: "Mute",
@@ -603,6 +639,7 @@
           skillsStat: `${inv.skills_installed || 0} skills · ${inv.agents_installed || 0} agents`,
           bashHead: `&& ${bdna.chained_pct || 0}% · | ${bdna.piped_pct || 0}% · heredoc ${fmt(bdna.heredoc_count)}`,
           sigStats: "SIGNATURE STATS",
+          verdictTag: "VERDICT",
         },
       };
 
@@ -687,7 +724,7 @@
 
         const radarSvg = document.getElementById("radarSvg");
         clear(radarSvg);
-        const cx = 180, cy = 145, R = 90;
+        const cx = 190, cy = 155, R = 74;
 
         [0.25, 0.5, 0.75, 1].forEach(r => {
           const pts = axes.map((_, i) => {
@@ -695,24 +732,34 @@
             return `${(cx + R * r * Math.cos(ang)).toFixed(1)},${(cy + R * r * Math.sin(ang)).toFixed(1)}`;
           }).join(" ");
           radarSvg.appendChild(svgNode("polygon", {
-            points: pts, fill: "none", stroke: "var(--border)", "stroke-width": r === 1 ? "1.2" : "1",
+            points: pts,
+            fill: "none",
+            stroke: r === 1 ? "var(--border-strong)" : "var(--border)",
+            "stroke-width": r === 1 ? "1.3" : "1",
+            ...(r === 1 ? { "stroke-dasharray": "4 3" } : {}),
           }));
         });
 
         axes.forEach((ax, i) => {
           const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
+          const norm = Math.min(1.52, Math.max(0.05, ax.score / 100));
+          const dist = R * norm;
+          const spokeLen = Math.max(R, dist);
           radarSvg.appendChild(svgNode("line", {
             x1: cx, y1: cy,
-            x2: (cx + R * Math.cos(ang)).toFixed(1),
-            y2: (cy + R * Math.sin(ang)).toFixed(1),
-            stroke: "var(--border)", "stroke-width": "1",
+            x2: (cx + spokeLen * Math.cos(ang)).toFixed(1),
+            y2: (cy + spokeLen * Math.sin(ang)).toFixed(1),
+            stroke: ax.score > 100 ? "var(--accent-soft)" : "var(--border)", "stroke-width": "1",
           }));
-          const lx = cx + (R + 22) * Math.cos(ang);
-          const ly = cy + (R + 22) * Math.sin(ang);
+          const labelR = Math.max(R + 22, dist + 16);
+          const lx = cx + labelR * Math.cos(ang);
+          const ly = cy + labelR * Math.sin(ang);
           const anchor = Math.abs(Math.cos(ang)) < 0.2 ? "middle" : (Math.cos(ang) > 0 ? "start" : "end");
           const txt = svgNode("text", {
             x: lx.toFixed(1), y: (ly + 4).toFixed(1),
-            "text-anchor": anchor, fill: "var(--text-secondary)",
+            "text-anchor": anchor,
+            fill: ax.score > 100 ? "var(--accent)" : "var(--text-secondary)",
+            "font-weight": ax.score > 100 ? "600" : "400",
             "font-size": isEn ? "10.5" : "11.5", "font-family": "var(--font-sans)",
           });
           const lbl = isEn ? (ax.label_en || ax.label) : ax.label;
@@ -722,7 +769,7 @@
 
         const polyPts = axes.map((ax, i) => {
           const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
-          const dist = R * (Math.max(5, ax.score) / 100);
+          const dist = R * Math.min(1.52, Math.max(0.05, ax.score / 100));
           return `${(cx + dist * Math.cos(ang)).toFixed(1)},${(cy + dist * Math.sin(ang)).toFixed(1)}`;
         }).join(" ");
         radarSvg.appendChild(svgNode("polygon", {
@@ -731,11 +778,13 @@
         }));
         axes.forEach((ax, i) => {
           const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
-          const dist = R * (Math.max(5, ax.score) / 100);
+          const dist = R * Math.min(1.52, Math.max(0.05, ax.score / 100));
           radarSvg.appendChild(svgNode("circle", {
             cx: (cx + dist * Math.cos(ang)).toFixed(1),
             cy: (cy + dist * Math.sin(ang)).toFixed(1),
-            r: "3.5", fill: "var(--accent)",
+            r: ax.score > 100 ? "4.5" : "3.5",
+            fill: ax.score > 100 ? "var(--bg)" : "var(--accent)",
+            ...(ax.score > 100 ? { stroke: "var(--accent)", "stroke-width": "2" } : {}),
           }));
         });
 
@@ -835,6 +884,22 @@
           card.appendChild(el("div", "meme-line", isEn ? (m.line_en || m.line) : m.line));
           memeGrid.appendChild(card);
         });
+
+        // Verdict
+        const verdictEl = document.getElementById("verdictCard");
+        clear(verdictEl);
+        const vBody = isEn ? (persona.verdict_body_en || persona.verdict_body || "") : (persona.verdict_body || persona.verdict_body_en || "");
+        const vLevel = isEn ? (persona.verdict_level_en || persona.verdict_level || "") : (persona.verdict_level || persona.verdict_level_en || "");
+        if (vBody) {
+          verdictEl.hidden = false;
+          const vHead = el("div", "verdict-head");
+          vHead.appendChild(el("div", "meme-tag", t.verdictTag));
+          if (vLevel) vHead.appendChild(el("span", "verdict-level", vLevel));
+          verdictEl.appendChild(vHead);
+          verdictEl.appendChild(el("div", "verdict-body", vBody));
+        } else {
+          verdictEl.hidden = true;
+        }
 
         document.getElementById("footerLeft").textContent =
           `GENERATED ${(facts.generated_at || "").replace("T", " ")}`;
@@ -944,7 +1009,9 @@
         const isNotes = document.documentElement.getAttribute("data-theme") === "notes";
         const isEn = lang === "en";
         const t = I18N[lang];
-        const W = 1200, H = 1520;
+        const vBody = isEn ? (persona.verdict_body_en || persona.verdict_body || "") : (persona.verdict_body || persona.verdict_body_en || "");
+        const vLevel = isEn ? (persona.verdict_level_en || persona.verdict_level || "") : (persona.verdict_level || persona.verdict_level_en || "");
+        const W = 1200, H = vBody ? 1680 : 1520;
         const canvas = document.createElement("canvas");
         canvas.width = W;
         canvas.height = H;
@@ -1040,8 +1107,9 @@
         ctx.fill();
         ctx.stroke();
 
-        const rcx = 344, rcy = 690, rR = 116;
+        const rcx = 342, rcy = 692, rR = 94;
         [0.33, 0.66, 1].forEach(r => {
+          ctx.save();
           ctx.beginPath();
           axes.forEach((_, i) => {
             const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
@@ -1051,15 +1119,17 @@
             else ctx.lineTo(px, py);
           });
           ctx.closePath();
-          ctx.strokeStyle = border;
-          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = r === 1 ? (isNotes ? "rgba(28,25,23,0.28)" : "rgba(255,255,255,0.24)") : border;
+          ctx.lineWidth = r === 1 ? 2 : 1.5;
+          if (r === 1) ctx.setLineDash([5, 4]);
           ctx.stroke();
+          ctx.restore();
         });
 
         ctx.beginPath();
         axes.forEach((ax, i) => {
           const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
-          const dist = rR * (Math.max(5, ax.score) / 100);
+          const dist = rR * Math.min(1.45, Math.max(0.05, ax.score / 100));
           const px = rcx + dist * Math.cos(ang);
           const py = rcy + dist * Math.sin(ang);
           if (i === 0) ctx.moveTo(px, py);
@@ -1074,13 +1144,24 @@
 
         axes.forEach((ax, i) => {
           const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
-          const lx = rcx + (rR + 24) * Math.cos(ang);
-          const ly2 = rcy + (rR + 24) * Math.sin(ang);
-          ctx.fillStyle = text;
-          ctx.font = "600 17px -apple-system, sans-serif";
+          const dist = rR * Math.min(1.45, Math.max(0.05, ax.score / 100));
+          if (ax.score > 100) {
+            ctx.beginPath();
+            ctx.arc(rcx + dist * Math.cos(ang), rcy + dist * Math.sin(ang), 6, 0, Math.PI * 2);
+            ctx.fillStyle = cardBg;
+            ctx.fill();
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+          const labelR = Math.max(rR + 24, dist + 18);
+          const lx = rcx + labelR * Math.cos(ang);
+          const ly2 = rcy + labelR * Math.sin(ang);
+          ctx.fillStyle = ax.score > 100 ? accent : text;
+          ctx.font = `${ax.score > 100 ? "700" : "600"} 17px -apple-system, sans-serif`;
           ctx.textAlign = Math.abs(Math.cos(ang)) < 0.2 ? "center" : (Math.cos(ang) > 0 ? "left" : "right");
           const lbl = isEn ? (ax.label_en || ax.label) : ax.label;
-          ctx.fillText(`${lbl} ${ax.score}`, lx, ly2 + 6, 130);
+          ctx.fillText(`${lbl} ${ax.score}`, lx, ly2 + 6, 124);
         });
         ctx.textAlign = "left";
 
@@ -1103,27 +1184,52 @@
         sigs.forEach((s, i) => drawWrappedText(s, 640, 584 + i * 66, 444, 28, 2));
 
         const memes = (persona.memes || []).slice(0, 3);
+        const mStep = vBody ? 156 : 165;
+        const mH = vBody ? 136 : 142;
         memes.forEach((m, i) => {
-          const my = 940 + i * 165;
+          const my = 936 + i * mStep;
           ctx.fillStyle = cardBg;
           ctx.strokeStyle = border;
-          drawRoundRect(72, my, 1056, 142, 18);
+          drawRoundRect(72, my, 1056, mH, 18);
           ctx.fill();
           ctx.stroke();
 
           ctx.fillStyle = accent;
           ctx.font = "600 22px ui-monospace, monospace";
-          ctx.fillText(isEn ? (m.tag_en || m.tag) : m.tag, 102, my + 44, 990);
+          ctx.fillText(isEn ? (m.tag_en || m.tag) : m.tag, 102, my + 42, 990);
+
+          ctx.fillStyle = text;
+          ctx.font = "400 22px -apple-system, sans-serif";
+          const mline = isEn ? (m.line_en || m.line) : m.line;
+          drawWrappedText(mline, 102, my + 82, 990, 31, 2);
+        });
+
+        if (vBody) {
+          const vy = 1408;
+          ctx.fillStyle = cardBg;
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = 1.8;
+          drawRoundRect(72, vy, 1056, 190, 18);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = accent;
+          ctx.font = "600 22px ui-monospace, monospace";
+          ctx.fillText(t.verdictTag, 102, vy + 46);
+          if (vLevel) {
+            ctx.textAlign = "right";
+            ctx.fillText(vLevel, 1098, vy + 46, 540);
+            ctx.textAlign = "left";
+          }
 
           ctx.fillStyle = text;
           ctx.font = "400 23px -apple-system, sans-serif";
-          const mline = isEn ? (m.line_en || m.line) : m.line;
-          drawWrappedText(mline, 102, my + 86, 990, 32, 2);
-        });
+          drawWrappedText(vBody, 102, vy + 92, 990, 33, 3);
+        }
 
         ctx.fillStyle = muted;
         ctx.font = "500 20px ui-monospace, monospace";
-        ctx.fillText("ai-dev-wrapped · 100% local & sanitized", 72, 1475);
+        ctx.fillText("ai-dev-wrapped · 100% local & sanitized", 72, vBody ? 1642 : 1475);
 
         const link = document.createElement("a");
         link.download = `ai-dev-wrapped-${facts.year}-${lang}.png`;
