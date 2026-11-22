@@ -258,6 +258,10 @@ class TestCollect(unittest.TestCase):
             self.assertNotIn(str(home), raw)
 
             self.assertEqual(len(data["radar_axes"]), 6)
+            self.assertEqual(
+                [ax["key"] for ax in data["radar_axes"]],
+                ["night_owl", "boss_energy", "gear_hoarder", "trust_issues", "chaos_grit", "ai_addict"],
+            )
             for ax in data["radar_axes"]:
                 self.assertGreaterEqual(ax["score"], 0)
                 self.assertLessEqual(ax["score"], 100)
@@ -291,8 +295,99 @@ class TestCollect(unittest.TestCase):
             self.assertEqual(data["totals"]["tool_calls"], 0)
             self.assertEqual(data["peak_hour"], 0)
             self.assertEqual(len(data["radar_axes"]), 6)
+            self.assertEqual(data["fallback_persona"]["archetype_id"], "wrapped-snapshot")
             tags = [m["tag"] for m in data["fallback_persona"]["memes"]]
             self.assertEqual(len(tags), len(set(tags)), f"duplicate fallback memes: {tags}")
+
+    def test_neutral_fallback_never_fabricates_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            home = tmp_path / "home"
+            proj = home / ".claude" / "projects" / "-Users-dev-small"
+            proj.mkdir(parents=True)
+            lines = [
+                {
+                    "type": "assistant",
+                    "entrypoint": "claude-desktop",
+                    "timestamp": "2026-11-20T14:00:00Z",
+                    "message": {
+                        "id": f"m{i}",
+                        "role": "assistant",
+                        "content": [{"type": "tool_use", "id": f"t{i}", "name": "Bash", "input": {"command": "pytest -q"}}],
+                    },
+                }
+                for i in range(150)
+            ]
+            (proj / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\n", encoding="utf-8")
+            out = tmp_path / "facts.json"
+            proc = subprocess.run(
+                [sys.executable, "-I", str(COLLECT), "--home", str(home), "--year", "2026", "--output", str(out)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            raw = out.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            self.assertEqual(data["fallback_persona"]["archetype_id"], "wrapped-snapshot")
+            self.assertNotIn("160k", raw)
+            self.assertNotIn("十几万次", raw)
+            self.assertNotIn("thousands of", raw)
+            self.assertIn("150", json.dumps(data["fallback_persona"], ensure_ascii=False))
+
+    def test_extended_harnesses_and_skill_dir_no_false_positive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            home = tmp_path / "home"
+
+            # 1. Copilot CLI events.jsonl
+            cop = home / ".copilot" / "session-state" / "s-cop"
+            cop.mkdir(parents=True)
+            (cop / "events.jsonl").write_text("\n".join([
+                json.dumps({"type": "session.start", "timestamp": "2026-11-20T10:00:00Z", "data": {"selectedModel": "gpt-5.3"}}),
+                json.dumps({"type": "tool.execution_start", "timestamp": "2026-11-20T10:01:00Z", "data": {"toolCallId": "c1", "toolName": "bash", "arguments": {"command": "pytest -q"}, "model": "gpt-5.3"}}),
+            ]) + "\n", encoding="utf-8")
+
+            # 2. Gemini CLI chats/*.json (separate from antigravity)
+            gem = home / ".gemini" / "tmp" / "proj1" / "chats"
+            gem.mkdir(parents=True)
+            (gem / "session-1.json").write_text(json.dumps({
+                "messages": [{"timestamp": "2026-11-20T11:00:00Z", "model": "gemini-3-pro", "toolCalls": [{"name": "run_command", "args": {"command": "ls -la"}}]}]
+            }), encoding="utf-8")
+
+            # 3. Cline VS Code globalStorage task
+            cline = home / "Library" / "Application Support" / "Code" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "tasks" / "t1"
+            cline.mkdir(parents=True)
+            (cline / "api_conversation_history.json").write_text(json.dumps([
+                {"ts": 1795176000000, "role": "assistant", "content": [{"type": "tool_use", "name": "execute_command", "input": {"command": "git status"}}]}
+            ]), encoding="utf-8")
+
+            # 4. OpenCode storage + Aider header + AutoClaw
+            oc_sess = home / ".local" / "share" / "opencode" / "storage" / "session" / "p1"
+            oc_sess.mkdir(parents=True)
+            (oc_sess / "s1.json").write_text(json.dumps({"time": {"created": 1795176000000}}), encoding="utf-8")
+            (home / ".aider.chat.history.md").write_text("# aider chat started at 2026-11-20 12:00:00\n/test pytest -q\n", encoding="utf-8")
+            ac = home / ".openclaw-autoclaw" / "agents" / "main" / "sessions"
+            ac.mkdir(parents=True)
+            (ac / "a1.jsonl").write_text(json.dumps({"type": "message", "timestamp": "2026-11-20T13:00:00Z", "message": {"role": "assistant", "content": [{"type": "toolCall", "name": "exec", "arguments": {"command": "ls"}}]}}) + "\n", encoding="utf-8")
+
+            # 5. Skill-only Trae directory with zero sessions must NOT trigger false detection
+            (home / ".trae" / "skills" / "some-skill").mkdir(parents=True)
+            (home / ".trae" / "skills" / "some-skill" / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+
+            out = tmp_path / "facts.json"
+            proc = subprocess.run(
+                [sys.executable, "-I", str(COLLECT), "--home", str(home), "--year", "2026", "--output", str(out)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            data = json.loads(out.read_text(encoding="utf-8"))
+            harnesses = {h["id"]: h for h in data["harnesses"] if h["detected"]}
+            for expected_id in ("copilot", "gemini-cli", "cline", "opencode", "aider", "autoclaw"):
+                self.assertIn(expected_id, harnesses, f"missing extended harness {expected_id}: {list(harnesses)}")
+                self.assertGreater(harnesses[expected_id]["sessions"], 0)
+            self.assertNotIn("trae", harnesses, "skill-only directory caused false positive detection")
+            self.assertGreaterEqual(data["totals"]["bash_calls"], 4)
 
 
 if __name__ == "__main__":

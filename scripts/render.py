@@ -88,22 +88,29 @@ def validate_and_merge_persona(facts: dict[str, Any], persona_path: Path | None)
     if memes:
         merged["memes"] = memes
 
+    has_custom_notes = False
+    valid_axis_keys = set(fallback.get("axis_notes", {}).keys())
     for note_key in ("axis_notes", "axis_notes_en"):
         fb_notes = dict(fallback.get(note_key) or {})
         raw_notes = loaded.get(note_key)
         if isinstance(raw_notes, dict):
-            fb_notes.update({str(k): str(v) for k, v in raw_notes.items() if isinstance(v, str) and v.strip()})
+            cleaned_notes = {
+                str(k): str(v).strip()
+                for k, v in raw_notes.items()
+                if (not valid_axis_keys or str(k) in valid_axis_keys) and isinstance(v, str) and v.strip()
+            }
+            if cleaned_notes:
+                fb_notes.update(cleaned_notes)
+                if note_key == "axis_notes":
+                    has_custom_notes = True
         merged[note_key] = fb_notes
 
-    if isinstance(loaded.get("axis_notes"), dict) and not isinstance(loaded.get("axis_notes_en"), dict):
+    if has_custom_notes and not (isinstance(loaded.get("axis_notes_en"), dict) and any(
+        isinstance(v, str) and v.strip()
+        for k, v in loaded["axis_notes_en"].items()
+        if not valid_axis_keys or str(k) in valid_axis_keys
+    )):
         merged["axis_notes_en"] = merged["axis_notes"]
-
-    overrides = loaded.get("radar_overrides")
-    if isinstance(overrides, dict):
-        for ax in facts.get("radar_axes") or []:
-            key = ax.get("key")
-            if key in overrides and isinstance(overrides[key], (int, float)) and not isinstance(overrides[key], bool):
-                ax["score"] = max(0, min(100, int(round(overrides[key]))))
     return merged
 
 

@@ -15,15 +15,9 @@
     "display_name": { "type": "string", "maxLength": 40 },
     "archetype_id": {
       "type": "string",
-      "enum": [
-        "nightshift-orchestrator",
-        "swarm-commander",
-        "shell-alchemist",
-        "fullstack-maverick",
-        "verification-purist",
-        "full-auto-speedrunner",
-        "minimalist-craftsman"
-      ]
+      "minLength": 2,
+      "maxLength": 48,
+      "description": "1-of-1 kebab-case slug analyzed and coined freely by the user's agent from facts.json"
     },
     "archetype_title": { "type": "string", "minLength": 2, "maxLength": 36 },
     "archetype_en": { "type": "string", "minLength": 2, "maxLength": 48 },
@@ -59,36 +53,32 @@
     "axis_notes": {
       "type": "object",
       "required": [
-        "orchestration",
-        "shell_craft",
-        "domain_span",
-        "verification",
-        "night_ops",
-        "autonomy"
+        "night_owl",
+        "boss_energy",
+        "gear_hoarder",
+        "trust_issues",
+        "chaos_grit",
+        "ai_addict"
       ],
       "properties": {
-        "orchestration": { "type": "string", "maxLength": 100 },
-        "shell_craft": { "type": "string", "maxLength": 100 },
-        "domain_span": { "type": "string", "maxLength": 100 },
-        "verification": { "type": "string", "maxLength": 100 },
-        "night_ops": { "type": "string", "maxLength": 100 },
-        "autonomy": { "type": "string", "maxLength": 100 }
+        "night_owl": { "type": "string", "maxLength": 100 },
+        "boss_energy": { "type": "string", "maxLength": 100 },
+        "gear_hoarder": { "type": "string", "maxLength": 100 },
+        "trust_issues": { "type": "string", "maxLength": 100 },
+        "chaos_grit": { "type": "string", "maxLength": 100 },
+        "ai_addict": { "type": "string", "maxLength": 100 }
       }
     },
     "axis_notes_en": {
       "type": "object",
       "properties": {
-        "orchestration": { "type": "string", "maxLength": 100 },
-        "shell_craft": { "type": "string", "maxLength": 100 },
-        "domain_span": { "type": "string", "maxLength": 100 },
-        "verification": { "type": "string", "maxLength": 100 },
-        "night_ops": { "type": "string", "maxLength": 100 },
-        "autonomy": { "type": "string", "maxLength": 100 }
+        "night_owl": { "type": "string", "maxLength": 100 },
+        "boss_energy": { "type": "string", "maxLength": 100 },
+        "gear_hoarder": { "type": "string", "maxLength": 100 },
+        "trust_issues": { "type": "string", "maxLength": 100 },
+        "chaos_grit": { "type": "string", "maxLength": 100 },
+        "ai_addict": { "type": "string", "maxLength": 100 }
       }
-    },
-    "radar_overrides": {
-      "type": "object",
-      "additionalProperties": { "type": "integer", "minimum": 0, "maximum": 100 }
     }
   }
 }

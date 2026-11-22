@@ -1,15 +1,16 @@
 # ai-dev-wrapped
 
-**Your AI coding year in review — across every agent harness on your machine.**
+**Your AI coding year in review — across every agent assistant & IDE on your machine.**
 
 [English](./README.md) · [简体中文](./README_CN.md)
 
-`ai-dev-wrapped` is a zero-dependency cross-agent skill that scans local transcripts from **Claude Code / Claude Desktop**, **OpenAI Codex**, **Antigravity**, **Kimi CLI**, **OpenClaw**, and **Cursor**, reverse-engineers how you collaborate with AI, and opens a minimalist Linear / Apple-Notes-inspired localhost experience complete with:
+`ai-dev-wrapped` is a zero-dependency universal skill that auto-discovers and scans **35+ local AI coding agents, CLIs, and IDEs** (Claude Code/Desktop, Codex, GitHub Copilot CLI & VS Code Chat, Antigravity, Gemini CLI, Cursor, Windsurf, Cline, Roo Code, Kilo Code, OpenCode, Kimi CLI, OpenClaw, AutoClaw, Goose, Continue, Aider, Trae, Qoder, Kiro, Qwen Code, OpenHands, Amp, Zed AI, and more).
 
-- **Developer Archetype Classification** (`Nightshift Swarm Architect`, `Swarm Commander`, `Shell Alchemist`, `Full-Stack Maverick`, `Verification Purist`, `Full-Auto Speedrunner`, `Minimalist Craftsman`)
-- **6-Axis Capability Radar** (`Orchestration`, `Shell Craft`, `Domain Span`, `Verification`, `Night Ops`, `Autonomy`)
-- **24h Coding Rhythm & Shell DNA** (heredoc-aware Bash parser, `&&` / pipe rates, top executables, parallel turn depth)
-- **Data-Backed Developer Memes** generated from your real stats (zero generic horoscope fluff)
+Then **your own AI agent analyzes your unique habits itself** (using the viral copywriting prompt in [`SKILL.md`](./SKILL.md) — zero hardcoded personality buckets) and opens a minimalist Linear / Apple-Notes-inspired localhost experience complete with:
+
+- **100% Agent-Analyzed Bespoke Persona (Zero Hardcoded Buckets)**: Python never assigns canned templates — `SKILL.md` prompts your own AI agent to analyze your anomalies and coin a 1-of-1 archetype & Douyin/TikTok-style roasts strictly grounded in `facts.json`
+- **Universal 6-Axis AI Persona Radar** (standardized across every developer so share cards compare apples-to-apples): `Night Owl`, `Boss Energy`, `Gear Hoarder`, `Trust Issues`, `Chaos Grit`, `AI Addict`
+- **24h Body Clock & Shell Habits** (heredoc-aware Bash parser, `&&` / pipe rates, top executables, parallel turn depth)
 - **Dual Minimalist Themes + Bilingual Toggle (`EN / 中文`)** — Linear Dark & Apple Notes Paper
 - **Zero-Dependency Ambient Synth** (Web Audio API pentatonic piano/pad)
 - **One-Click 2× Retina Share Card PNG Export**
@@ -50,16 +51,16 @@ python3 scripts/render.py --facts /tmp/ai_wrapped_facts.json --serve --open
 
 ---
 
-## Supported Harnesses
+## Supported Harnesses (35+ Auto-Discovered Agents, CLIs & IDEs)
 
-| Harness | Local Data Sources Scanned (Read-Only) |
+`collect.py` automatically scans read-only local data across macOS, Linux, and Windows (only active agents with real session/tool logs are reported — never empty skill-only directories):
+
+| Category | Supported Tools & Data Sources |
 | :--- | :--- |
-| **Claude Code / Desktop** | `~/.claude/projects/**/*.jsonl`, `~/.claude/history.jsonl`, `~/.claude.json`, `~/.claude/settings*.json` |
-| **OpenAI Codex** | `~/.codex/state_5.sqlite` (`?immutable=1`), `~/.codex/thread_history_1.sqlite`, fallback `sessions/` & `archived_sessions/` |
-| **Antigravity** | `~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl` |
-| **Kimi CLI** | `~/.kimi/sessions/*/*/wire.jsonl` & `context.jsonl` |
-| **OpenClaw** | `~/.openclaw/agents/*/sessions/*.jsonl` |
-| **Cursor** | `~/.cursor/ai-tracking/ai-code-tracking.db`, `~/.cursor/projects/*/agent-transcripts/` |
+| **CLI & Terminal Agents** | **Claude Code** (`~/.claude/projects/**/*.jsonl`, `history.jsonl`), **OpenAI Codex** (`~/.codex/state_5.sqlite`, `thread_history_1.sqlite`, JSONL), **GitHub Copilot CLI** (`~/.copilot/session-state/*/events.jsonl`), **Gemini CLI** (`~/.gemini/tmp/*/chats/*.json`, `logs.json`), **Kimi CLI** (`~/.kimi/sessions/`), **OpenCode** (`~/.local/share/opencode/` SQLite & JSON), **Goose** (`~/.local/share/goose/`, `~/.config/goose/`), **Aider** (`~/.aider.chat.history.md`, `~/.aider-desk/`) |
+| **AI IDEs & Desktop Apps** | **Claude Desktop**, **Antigravity** (`~/.gemini/antigravity/brain/`), **Cursor** (`~/.cursor/ai-tracking/`, `agent-transcripts/`), **Windsurf / Cascade** (`~/.codeium/windsurf/cascade/`, IDE chatStorage), **Trae / Trae CN** (`~/.trae*`), **Qoder** (`~/.qoder*`), **Kiro** (`~/.kiro`), **Zed AI** (`zed` conversations) |
+| **IDE Extensions** | **GitHub Copilot Chat** (VS Code / Insiders / VSCodium `workspaceStorage/*/chatSessions`), **Cline** (`saoudrizwan.claude-dev`, `~/.cline`), **Roo Code** (`rooveterinaryinc.roo-cline`, `~/.roo`), **Kilo Code** (`kilocode.kilo-code`, `~/.kilocode`), **Continue** (`~/.continue/sessions/`) |
+| **Multi-Agent / Emerging CLIs** | **OpenClaw** (`~/.openclaw`), **AutoClaw** (`~/.openclaw-autoclaw`), **Amp**, **Crush**, **Qwen Code**, **Factory Droid**, **OpenHands**, **Mistral Vibe**, **Hermes**, **JetBrains Junie**, **Augment**, **iFlow**, **Grok CLI**, **Lingma**, **CodeBuddy**, **Pi**, **Mux**, **Zencoder**, **Rovo Dev**, **CodeArts Doer** |
 
 ---
 

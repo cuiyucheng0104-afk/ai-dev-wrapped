@@ -66,50 +66,50 @@ def sample_facts() -> dict:
             "glob_calls": 0,
         },
         "radar_axes": [
-            {"key": "orchestration", "label": "编排杠杆", "label_en": "Orchestration", "score": 96},
-            {"key": "shell_craft", "label": "终端功底", "label_en": "Shell Craft", "score": 94},
-            {"key": "domain_span", "label": "跨界广度", "label_en": "Domain Span", "score": 91},
-            {"key": "verification", "label": "工程洁癖", "label_en": "Verification", "score": 84},
-            {"key": "night_ops", "label": "夜战耐力", "label_en": "Night Ops", "score": 95},
-            {"key": "autonomy", "label": "放权程度", "label_en": "Autonomy", "score": 92},
+            {"key": "night_owl", "label": "夜猫纯度", "label_en": "Night Owl", "score": 90},
+            {"key": "boss_energy", "label": "甩手掌柜", "label_en": "Boss Energy", "score": 92},
+            {"key": "gear_hoarder", "label": "装备狂魔", "label_en": "Gear Hoarder", "score": 95},
+            {"key": "trust_issues", "label": "疑心洁癖", "label_en": "Trust Issues", "score": 88},
+            {"key": "chaos_grit", "label": "硬核折腾", "label_en": "Chaos Grit", "score": 94},
+            {"key": "ai_addict", "label": "含AI量", "label_en": "AI Addict", "score": 96},
         ],
         "fallback_persona": {
-            "archetype_id": "nightshift-orchestrator",
-            "archetype_title": "深夜蜂群总工",
-            "archetype_en": "Nightshift Swarm Architect",
-            "one_liner": "凌晨两点还在拉 16 棵进程树，只用 Bash 也能打出全栈闭环。",
-            "one_liner_en": "02:00 AM is your morning rush hour, spinning swarms with pure Bash.",
-            "secondary_badges": ["终端炼金术士", "跨界特种兵"],
-            "secondary_badges_en": ["Shell Alchemist", "Multi-Harness"],
+            "archetype_id": "nightshift-boss",
+            "archetype_title": "凌晨三点的赛博包工头",
+            "archetype_en": "3AM Swarm Warlord",
+            "one_liner": "月亮不睡你不睡，一个指令拉起几十个小弟替你写代码。",
+            "one_liner_en": "3AM is your rush hour — one prompt and an entire army clocks in.",
+            "secondary_badges": ["深夜突击型", "赛博松鼠党"],
+            "secondary_badges_en": ["Night-Shift Raider", "Gear Hoarder"],
             "memes": [
                 {
                     "tag": "Grep=1 / Bash=16万",
                     "tag_en": "Grep=1 / Bash=160k",
-                    "line": "系统里没给 Grep，于是我用 grep+head+sed 管道硬刚了十六万次。",
+                    "line": "系统没给 Grep 也无所谓，管道 grep + head + sed 就是我的原生引擎。",
                     "line_en": "No Grep tool? grep | head | sed is my native runtime.",
                 },
                 {
                     "tag": "3,985 次 rtk proxy",
                     "tag_en": "3,985x rtk proxy",
-                    "line": "自己装了省 Token 钩子，嫌省过头又亲自喊了四千次撤销压缩。",
+                    "line": "亲手装了省 Token 钩子，嫌省过头又亲自喊了四千次撤销。",
                     "line_en": "Installed a token compressor hook, then bypassed it 3,985 times.",
                 },
             ],
             "axis_notes": {
-                "orchestration": "主会话 355 / 子代理 4,727",
-                "shell_craft": "Bash 占比 70.8%",
-                "domain_span": "跨量化、渲染与部署",
-                "verification": "完成前验证与只读审查",
-                "night_ops": "凌晨 2 点早高峰",
-                "autonomy": "Auto + Bypass 狂飙",
+                "night_owl": "凌晨 2 点才是早高峰",
+                "boss_energy": "355 主会话裂变 4,727 子代理",
+                "gear_hoarder": "238 技能库存，23 个插件零点击",
+                "trust_issues": "写完必跑只读审查",
+                "chaos_grit": "70.3% 动作直接硬刚终端",
+                "ai_addict": "224 天都在和 AI 贴身肉搏",
             },
             "axis_notes_en": {
-                "orchestration": "355 main / 4,727 subagents",
-                "shell_craft": "70.8% Bash",
-                "domain_span": "Quant, rendering & deploy",
-                "verification": "Read-only review & tests",
-                "night_ops": "02:00 AM rush hour",
-                "autonomy": "Auto + Bypass",
+                "night_owl": "02:00 AM is your rush hour",
+                "boss_energy": "355 sessions spun into 4,727 agents",
+                "gear_hoarder": "238 skills installed, 23 untouched",
+                "trust_issues": "Read-only audit before shipping",
+                "chaos_grit": "70.3% raw Bash execution",
+                "ai_addict": "224 active days with AI",
             },
         },
     }
@@ -167,9 +167,15 @@ class TestRender(unittest.TestCase):
 
             facts_p.write_text(json.dumps(sample_facts()), encoding="utf-8")
             secret_sibling.write_text("TOP_SECRET", encoding="utf-8")
-            # Wrong types for secondary_badges, memes, radar_overrides
+            # Ensure universal radar scores cannot be altered by persona.json overrides
             bad_types_p.write_text(
-                json.dumps({"secondary_badges": "not-a-list", "memes": "not-a-list", "one_liner": 123, "radar_overrides": {"orchestration": True}}),
+                json.dumps({
+                    "secondary_badges": "not-a-list",
+                    "memes": "not-a-list",
+                    "one_liner": 123,
+                    "radar_overrides": {"night_owl": 1},
+                    "axis_notes": {"orchestration": "stale-v1-key"},
+                }),
                 encoding="utf-8",
             )
 
@@ -184,6 +190,10 @@ class TestRender(unittest.TestCase):
             parsed = json.loads(m.group(1))
             self.assertIsInstance(parsed["persona"]["secondary_badges"], list)
             self.assertIsInstance(parsed["persona"]["memes"], list)
+            self.assertEqual(parsed["facts"]["radar_axes"][0]["score"], 90)
+            self.assertNotIn("orchestration", parsed["persona"]["axis_notes"])
+            self.assertEqual(parsed["persona"]["axis_notes_en"]["night_owl"], "02:00 AM is your rush hour")
+            self.assertIn("totals.max_parallel_turn ?? 0", html)
 
             sys.path.insert(0, str(ROOT / "scripts"))
             try:
@@ -195,7 +205,7 @@ class TestRender(unittest.TestCase):
                 try:
                     with opener.open(f"http://127.0.0.1:{port}/", timeout=3) as resp:
                         self.assertEqual(resp.status, 200)
-                        self.assertIn("Nightshift Swarm Architect", resp.read().decode("utf-8"))
+                        self.assertIn("3AM Swarm Warlord", resp.read().decode("utf-8"))
                     with opener.open(f"http://127.0.0.1:{port}/favicon.ico", timeout=3) as fav:
                         self.assertEqual(fav.status, 204)
                     # Sibling file & directory exposure must return 404
@@ -231,7 +241,7 @@ class TestRender(unittest.TestCase):
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
                 with opener.open(url, timeout=3) as resp:
                     self.assertEqual(resp.status, 200)
-                    self.assertIn("深夜蜂群总工", resp.read().decode("utf-8"))
+                    self.assertIn("凌晨三点的赛博包工头", resp.read().decode("utf-8"))
             finally:
                 try:
                     os.kill(pid, signal.SIGTERM)

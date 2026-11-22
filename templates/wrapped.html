@@ -31,11 +31,11 @@
       --border: rgba(28, 25, 23, 0.09);
       --border-strong: rgba(28, 25, 23, 0.18);
       --text: #1c1917;
-      --text-secondary: #68625c;
-      --text-muted: #9a938b;
-      --accent: #c26d18;
-      --accent-soft: rgba(194, 109, 24, 0.12);
-      --night: #b45309;
+      --text-secondary: #57524c;
+      --text-muted: #6f6860;
+      --accent: #a85507;
+      --accent-soft: rgba(168, 85, 7, 0.12);
+      --night: #9a4a06;
       --bar-bg: rgba(28, 25, 23, 0.07);
       --glow: radial-gradient(60% 45% at 50% 0%, rgba(217, 119, 6, 0.07) 0%, rgba(251, 250, 247, 0) 100%);
     }
@@ -536,7 +536,15 @@
       const bdna = facts.bash_dna || {};
       const inv = facts.inventory || {};
       const axes = facts.radar_axes || [];
-      const activeHarnesses = (facts.harnesses || []).filter(h => h.detected);
+      const rawDetected = (facts.harnesses || []).filter(h => h.detected);
+      const activeHarnesses = rawDetected
+        .filter(h => h.sessions > 0 || h.tool_calls > 0)
+        .sort((a, b) => (b.tool_calls - a.tool_calls) || (b.sessions - a.sessions));
+      const shownHarnesses = activeHarnesses.length > 0 ? activeHarnesses : rawDetected;
+      const shortHarnessName = (name) => String(name || "")
+        .replace("Claude Code / Desktop", "Claude")
+        .replace("OpenAI ", "")
+        .replace("GitHub ", "");
 
       const urlLang = new URLSearchParams(window.location.search).get("lang");
       let lang = (urlLang === "en" || urlLang === "zh")
@@ -553,21 +561,21 @@
           themeToDark: "暗夜",
           langToggle: "EN",
           share: "导出分享图",
-          kpi: ["主会话", "累计工具调用", "Bash 占比", "并发峰值"],
+          kpi: ["主线对话", "AI 动手次数", "Bash 硬刚率", "单回合并发"],
           kpiMeta: [
-            `+ ${fmt(totals.subagent_sessions)} 子代理`,
+            `+ ${fmt(totals.subagent_sessions)} 分身子代理`,
             `${fmt(totals.active_days)} 活跃天`,
             `${fmt(totals.bash_calls)} 次终端`,
-            `${totals.multi_tool_turn_pct || 0}% 多工具并行`,
+            `${totals.multi_tool_turn_pct || 0}% 多线并行`,
           ],
-          radarTitle: "六维能力图",
-          rhythmTitle: "24 小时节律",
-          nightShare: "夜间占比 (22–05)",
-          peakHour: "峰值时段",
-          topModel: "主力模型",
-          toolsTitle: "工具与 Agent 版图",
-          bashTitle: "终端 Bash 基因",
-          skillsStat: `${inv.skills_installed || 0} 技能 · ${inv.agents_installed || 0} 专家`,
+          radarTitle: "六维含AI人格",
+          rhythmTitle: "24 小时作息图",
+          nightShare: "熬夜浓度 (22–05)",
+          peakHour: "最上头时段",
+          topModel: "本命模型",
+          toolsTitle: "常用工具榜",
+          bashTitle: "终端手癖榜",
+          skillsStat: `${inv.skills_installed || 0} 装备 · ${inv.agents_installed || 0} 分身`,
           bashHead: `&& ${bdna.chained_pct || 0}% · | ${bdna.piped_pct || 0}% · heredoc ${fmt(bdna.heredoc_count)}`,
           sigStats: "SIGNATURE STATS",
         },
@@ -578,20 +586,20 @@
           themeToDark: "Dark",
           langToggle: "中文",
           share: "Share PNG",
-          kpi: ["Sessions", "Tool Calls", "Bash Share", "Peak Parallel"],
+          kpi: ["Main Chats", "AI Actions", "Shell Grit", "Peak Parallel"],
           kpiMeta: [
             `+ ${fmt(totals.subagent_sessions)} subagents`,
             `${fmt(totals.active_days)} active days`,
             `${fmt(totals.bash_calls)} shell calls`,
             `${totals.multi_tool_turn_pct || 0}% parallel turns`,
           ],
-          radarTitle: "6-Axis Profile",
-          rhythmTitle: "24h Rhythm",
-          nightShare: "Night Ops (22–05)",
-          peakHour: "Peak Hour",
+          radarTitle: "6-Axis AI Persona",
+          rhythmTitle: "24h Body Clock",
+          nightShare: "Night Owl (22–05)",
+          peakHour: "Peak Flow Hour",
           topModel: "Top Model",
-          toolsTitle: "Tools & Agents",
-          bashTitle: "Shell DNA",
+          toolsTitle: "Tool Diet",
+          bashTitle: "Shell Habits",
           skillsStat: `${inv.skills_installed || 0} skills · ${inv.agents_installed || 0} agents`,
           bashHead: `&& ${bdna.chained_pct || 0}% · | ${bdna.piped_pct || 0}% · heredoc ${fmt(bdna.heredoc_count)}`,
           sigStats: "SIGNATURE STATS",
@@ -627,7 +635,7 @@
         document.documentElement.lang = isEn ? "en" : "zh-CN";
 
         document.getElementById("brandText").textContent =
-          `${facts.year} WRAPPED · ${activeHarnesses.length} HARNESSES`;
+          `${facts.year} WRAPPED · ${shownHarnesses.length} HARNESSES`;
         document.getElementById("langBtn").textContent = t.langToggle;
         const theme = document.documentElement.getAttribute("data-theme") || "linear";
         document.getElementById("themeBtn").textContent = theme === "notes" ? t.themeToDark : t.themeToNotes;
@@ -649,19 +657,18 @@
           ? (persona.secondary_badges_en || persona.secondary_badges || [])
           : (persona.secondary_badges || []);
         secBadges.slice(0, 3).forEach(b => badgesEl.appendChild(el("span", "pill", b)));
-        if (activeHarnesses.length > 0) {
-          const shortNames = activeHarnesses.map(h => {
-            const sn = h.name.replace("Claude Code / Desktop", "Claude").replace("OpenAI ", "");
-            return `${sn} ${fmt(h.sessions)}`;
-          }).join(" · ");
+        if (shownHarnesses.length > 0) {
+          const visible = shownHarnesses.slice(0, 6);
+          let shortNames = visible.map(h => `${shortHarnessName(h.name)} ${fmt(h.sessions)}`).join(" · ");
+          if (shownHarnesses.length > 6) shortNames += ` · +${shownHarnesses.length - 6}`;
           badgesEl.appendChild(el("span", "pill", shortNames));
         }
 
         const kpiVals = [
           fmt(totals.sessions),
           fmt(totals.tool_calls),
-          `${totals.bash_share_pct || 0}%`,
-          `${totals.max_parallel_turn || 1}x`,
+          `${totals.bash_share_pct ?? 0}%`,
+          `${totals.max_parallel_turn ?? 0}x`,
         ];
         const kpiGrid = document.getElementById("kpiGrid");
         clear(kpiGrid);
@@ -947,9 +954,9 @@
         const cardBg = isNotes ? "#ffffff" : "#101216";
         const border = isNotes ? "rgba(28,25,23,0.12)" : "rgba(255,255,255,0.10)";
         const text = isNotes ? "#1c1917" : "#f7f8f8";
-        const muted = isNotes ? "#68625c" : "#8a8f98";
-        const accent = isNotes ? "#c26d18" : "#7c8cff";
-        const accentSoft = isNotes ? "rgba(194,109,24,0.16)" : "rgba(124,140,255,0.20)";
+        const muted = isNotes ? "#57524c" : "#8a8f98";
+        const accent = isNotes ? "#a85507" : "#7c8cff";
+        const accentSoft = isNotes ? "rgba(168,85,7,0.14)" : "rgba(124,140,255,0.20)";
 
         function drawRoundRect(x, y, w, h, r) {
           ctx.beginPath();
@@ -962,7 +969,15 @@
         }
 
         function drawWrappedText(str, x, y, maxW, lineH, maxLines) {
-          const tokens = String(str || "").match(/[\u4e00-\u9fff]|[^\u4e00-\u9fff\s]+\s*|\s+/g) || [];
+          const rawTokens = String(str || "").match(/[\u4e00-\u9fff]|[^\u4e00-\u9fff\s]+\s*|\s+/g) || [];
+          const tokens = [];
+          for (const tok of rawTokens) {
+            if (ctx.measureText(tok).width > maxW && tok.trim().length > 1) {
+              for (const ch of tok) tokens.push(ch);
+            } else {
+              tokens.push(tok);
+            }
+          }
           let cur = "", row = 0;
           for (const tok of tokens) {
             if (cur && ctx.measureText(cur + tok).width > maxW) {
@@ -996,8 +1011,8 @@
         const kpiVals = [
           fmt(totals.sessions),
           fmt(totals.tool_calls),
-          `${totals.bash_share_pct || 0}%`,
-          `${totals.max_parallel_turn || 1}x`,
+          `${totals.bash_share_pct ?? 0}%`,
+          `${totals.max_parallel_turn ?? 0}x`,
         ];
         const kpiY = 312, cw = 250, ch = 128, gap = 18;
         t.kpi.forEach((lbl, idx) => {
@@ -1025,7 +1040,7 @@
         ctx.fill();
         ctx.stroke();
 
-        const rcx = 340, rcy = 690, rR = 145;
+        const rcx = 344, rcy = 690, rR = 116;
         [0.33, 0.66, 1].forEach(r => {
           ctx.beginPath();
           axes.forEach((_, i) => {
@@ -1059,24 +1074,24 @@
 
         axes.forEach((ax, i) => {
           const ang = -Math.PI / 2 + (i * 2 * Math.PI) / 6;
-          const lx = rcx + (rR + 30) * Math.cos(ang);
-          const ly2 = rcy + (rR + 30) * Math.sin(ang);
+          const lx = rcx + (rR + 24) * Math.cos(ang);
+          const ly2 = rcy + (rR + 24) * Math.sin(ang);
           ctx.fillStyle = text;
-          ctx.font = "600 18px -apple-system, sans-serif";
+          ctx.font = "600 17px -apple-system, sans-serif";
           ctx.textAlign = Math.abs(Math.cos(ang)) < 0.2 ? "center" : (Math.cos(ang) > 0 ? "left" : "right");
           const lbl = isEn ? (ax.label_en || ax.label) : ax.label;
-          ctx.fillText(`${lbl} ${ax.score}`, lx, ly2 + 6);
+          ctx.fillText(`${lbl} ${ax.score}`, lx, ly2 + 6, 130);
         });
         ctx.textAlign = "left";
 
         ctx.fillStyle = muted;
         ctx.font = "600 22px ui-monospace, monospace";
-        ctx.fillText(t.sigStats, 600, 522);
+        ctx.fillText(t.sigStats, 640, 522);
         const topCmds = (bdna.top_commands || []).slice(0, 4).map(c => c.name).join(" · ") || "—";
         const peakH = facts.peak_hour ?? 0;
-        const shortHarnesses = activeHarnesses
-          .map(h => h.name.replace("Claude Code / Desktop", "Claude").replace("OpenAI ", ""))
-          .join(" · ") || "—";
+        const shortHarnesses = shownHarnesses.slice(0, 6)
+          .map(h => shortHarnessName(h.name))
+          .join(" · ") + (shownHarnesses.length > 6 ? ` +${shownHarnesses.length - 6}` : "") || "—";
         const sigs = [
           `${t.peakHour}: ${String(peakH).padStart(2, "0")}:00 (${facts.night_owl_pct || 0}%)`,
           `Shell: ${topCmds}`,
@@ -1085,7 +1100,7 @@
         ];
         ctx.fillStyle = text;
         ctx.font = "500 21px -apple-system, sans-serif";
-        sigs.forEach((s, i) => drawWrappedText(s, 600, 584 + i * 66, 480, 28, 2));
+        sigs.forEach((s, i) => drawWrappedText(s, 640, 584 + i * 66, 444, 28, 2));
 
         const memes = (persona.memes || []).slice(0, 3);
         memes.forEach((m, i) => {

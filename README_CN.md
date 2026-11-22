@@ -1,15 +1,14 @@
 # ai-dev-wrapped
 
-**AI 开发者的跨平台年终总结 Skill —— 扫描你本机所有 Agent / Harness 记录，反推你的真实协作习惯。**
+**AI 开发者的全机跨平台年终总结 Skill —— 自动扫描电脑里几乎所有 AI 编程助手 / Agent 记录，由你自己的 Agent 现场毒舌分析专属人格。**
 
 [English](./README.md) · [简体中文](./README_CN.md)
 
-`ai-dev-wrapped` 是一个**零外部依赖**的通用 Skill：自动只读扫描 **Claude Code / Claude Desktop**、**OpenAI Codex**、**Antigravity**、**Kimi CLI**、**OpenClaw**、**Cursor** 等本地历史记录，在几秒内反推出你的 AI 工程人格，并自动打开极简风格的 `localhost` 年终总结网页：
+`ai-dev-wrapped` 是一个**零外部依赖**的通用 Skill：自动只读扫描电脑里的 **35+ 主流 AI 编程助手、CLI 与 IDE 插件**（覆盖 Claude Code / Desktop、Codex、GitHub Copilot CLI & VS Code Chat、Antigravity、Gemini CLI、Cursor、Windsurf、Cline、Roo Code、Kilo Code、OpenCode、Kimi CLI、OpenClaw、AutoClaw、Goose、Continue、Aider、Trae、Qoder、Kiro、Qwen Code、OpenHands、Amp、Zed AI 等），不设预设人格桶——直接用 [`SKILL.md`](./SKILL.md) 的提示词交由**用户自己的 Agent** 分析反推 1-of-1 人格，并自动拉起极简风格 `localhost` 网页：
 
-- **开发者人格分类**：深夜蜂群总工 / 蜂群指挥官 / 终端炼金术士 / 跨界特种兵 / 洁癖守门人 / 全自动狂飙派 / 克制极简派
-- **六维能力雷达图**：编排杠杆、终端功底、跨界广度、工程洁癖、夜战耐力、放权程度
-- **24 小时节律 & Bash 基因**：剥离 heredoc 干扰的真实命令统计、`&&`/管道率、单轮并发峰值
-- **基于真实数字的吐槽梗**：用你自己的数据反讽（如 *“Grep=1, Bash=16万”*、*“装了238个技能一半吃灰”*、*“凌晨2点早高峰”*）
+- **100% 由你自己的 Agent 现场分析人格（零预设模板桶）**：`collect.py` 只负责中性采集与脱敏，不预设“七种固定人格”；`SKILL.md` 内置系统提示词，让用户自己的 AI 结合反差数据与协作习惯，现场发明专属的一人一版高网感人设与抖音 / 小红书 / TikTok 吐槽梗
+- **全球统一六维含 AI 人格雷达图**（所有用户同尺度对比，不按个人私改维度）：`夜猫纯度 Night Owl`、`甩手掌柜 Boss Energy`、`装备狂魔 Gear Hoarder`、`疑心洁癖 Trust Issues`、`硬核折腾 Chaos Grit`、`含AI量 AI Addict`
+- **24 小时作息图 & 终端手癖榜**（剥离 heredoc 干扰的真实命令统计、`&&`/管道率、单轮并发峰值）
 - **Linear 暗夜 / Apple 备忘录纸感双主题 + 中英文秒切**
 - **零外链轻音乐配乐**（Web Audio API 本地合成柔和环境音）
 - **一键导出 2× 高清分享长图（PNG）**
@@ -51,16 +50,16 @@ python3 scripts/render.py --facts /tmp/ai_wrapped_facts.json --serve --open
 
 ---
 
-## 支持的 Agent / Harness
+## 支持的 AI 编程助手（全机自动发现 35+ Agent / CLI / IDE）
 
-| Harness | 只读采集数据源 |
+`collect.py` 跨 macOS / Linux / Windows 自动只读探测常见 AI 工具日志（仅统计存在真实会话/调用的活跃工具，不会把空配置或同步过来的技能目录误算为活跃助手）：
+
+| 类别 | 自动支持的工具与本地数据源 |
 | :--- | :--- |
-| **Claude Code / Desktop** | `~/.claude/projects/**/*.jsonl`、`~/.claude/history.jsonl`、`~/.claude.json`、`~/.claude/settings*.json` |
-| **OpenAI Codex** | `~/.codex/state_5.sqlite`（`?immutable=1` 只读快照）、`~/.codex/thread_history_1.sqlite`、以及 JSONL 回退 |
-| **Antigravity** | `~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl` |
-| **Kimi CLI** | `~/.kimi/sessions/*/*/wire.jsonl` 与 `context.jsonl` |
-| **OpenClaw** | `~/.openclaw/agents/*/sessions/*.jsonl` |
-| **Cursor** | `~/.cursor/ai-tracking/ai-code-tracking.db`、`~/.cursor/projects/*/agent-transcripts/` |
+| **终端 CLI Agent** | **Claude Code** (`~/.claude/projects/**/*.jsonl` 等)、**OpenAI Codex** (`~/.codex/state_5.sqlite`、JSONL)、**GitHub Copilot CLI** (`~/.copilot/session-state/*/events.jsonl`)、**Gemini CLI** (`~/.gemini/tmp/*/chats/*.json`)、**Kimi CLI** (`~/.kimi/sessions/`)、**OpenCode** (`~/.local/share/opencode/` SQLite/JSON)、**Goose** (`~/.local/share/goose/` / `.config/goose`)、**Aider** (`~/.aider.chat.history.md` / `.aider-desk`) |
+| **AI IDE & 桌面客户端** | **Claude Desktop**、**Antigravity** (`~/.gemini/antigravity/brain/`)、**Cursor** (`~/.cursor/ai-tracking/` 与 `agent-transcripts`)、**Windsurf / Cascade** (`~/.codeium/windsurf/cascade/`)、**Trae / Trae CN** (`~/.trae*`)、**Qoder** (`~/.qoder*`)、**Kiro** (`~/.kiro`)、**Zed AI** |
+| **编辑器扩展插件** | **GitHub Copilot Chat** (VS Code / Insiders / VSCodium `workspaceStorage/*/chatSessions`)、**Cline** (`saoudrizwan.claude-dev`)、**Roo Code** (`rooveterinaryinc.roo-cline`)、**Kilo Code** (`kilocode.kilo-code`)、**Continue** (`~/.continue/sessions/`) |
+| **自主蜂群与新兴 Agent** | **OpenClaw** (`~/.openclaw`)、**AutoClaw** (`~/.openclaw-autoclaw`)、**Amp**、**Crush**、**Qwen Code**、**Factory Droid**、**OpenHands**、**Mistral Vibe**、**Hermes**、**JetBrains Junie**、**Augment**、**iFlow**、**Grok CLI**、**Lingma**、**CodeBuddy**、**Pi**、**Mux**、**Zencoder**、**Rovo Dev**、**CodeArts Doer** |
 
 ---
 

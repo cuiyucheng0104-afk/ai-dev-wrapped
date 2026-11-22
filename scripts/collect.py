@@ -770,19 +770,68 @@ def collect_kimi(home: Path, tz_offset: float, target_year: int | None, warnings
     return res
 
 
-def collect_openclaw(home: Path, tz_offset: float, target_year: int | None, warnings: list[str]) -> dict[str, Any]:
-    """Collect OpenClaw agent transcripts."""
-    agents_dir = home / ".openclaw" / "agents"
-    res: dict[str, Any] = {
-        "detected": False,
+_SHELL_TOOL_NAMES = {
+    "bash", "shell", "exec", "run_command", "run_terminal_cmd",
+    "run_terminal_command", "execute_command", "terminal", "powershell", "sh", "zsh",
+}
+
+
+def _new_harness_res(detected: bool = False) -> dict[str, Any]:
+    return {
+        "detected": detected,
         "sessions": 0,
+        "subagents": 0,
         "tools": Counter(),
         "models": Counter(),
         "verbs": Counter(),
         "bflags": Counter(),
         "hours": Counter(),
         "days": set(),
+        "turn_sizes": [],
+        "projects": set(),
+        "auto_or_bypass": False,
     }
+
+
+def _record_tool(res: dict[str, Any], raw_name: Any, raw_args: Any = None) -> None:
+    """Normalize tool usage and extract Bash DNA across arbitrary agent schemas."""
+    name = str(raw_name or "tool").strip() or "tool"
+    if name.lower() in _SHELL_TOOL_NAMES:
+        res["tools"]["Bash"] += 1
+        args = raw_args
+        if isinstance(args, str):
+            try:
+                parsed = json.loads(args)
+                if isinstance(parsed, dict):
+                    args = parsed
+            except Exception:
+                analyze_bash_command(args, res["verbs"], res["bflags"])
+                return
+        if isinstance(args, dict):
+            for key in ("command", "CommandLine", "cmd", "script", "input"):
+                cmd = args.get(key)
+                if isinstance(cmd, str) and cmd.strip():
+                    analyze_bash_command(cmd, res["verbs"], res["bflags"])
+                    break
+    else:
+        res["tools"][name] += 1
+
+
+def _parse_any_dt(val: Any, tz_offset: float) -> datetime.datetime | None:
+    if isinstance(val, (int, float)) and val > 0:
+        return parse_epoch_dt(val, tz_offset)
+    if isinstance(val, str) and val.strip():
+        if val.strip().isdigit():
+            return parse_epoch_dt(float(val.strip()), tz_offset)
+        return parse_iso_dt(val, tz_offset)
+    return None
+
+
+def _scan_openclaw_root(
+    agents_dir: Path, tz_offset: float, target_year: int | None, warnings: list[str], label: str
+) -> dict[str, Any]:
+    """Scan OpenClaw-compatible agents/*/sessions/*.jsonl stores."""
+    res = _new_harness_res(False)
     if not agents_dir.exists():
         return res
     files = list(agents_dir.glob("*/sessions/*.jsonl"))
@@ -800,7 +849,7 @@ def collect_openclaw(home: Path, tz_offset: float, target_year: int | None, warn
                         d = json.loads(line)
                     except Exception:
                         continue
-                    dt = parse_iso_dt(d.get("timestamp", ""), tz_offset)
+                    dt = _parse_any_dt(d.get("timestamp", ""), tz_offset)
                     if not _year_matches(dt, target_year):
                         continue
                     sess_active = True
@@ -813,20 +862,44 @@ def collect_openclaw(home: Path, tz_offset: float, target_year: int | None, warn
                         if msg.get("role") == "user" and dt:
                             res["hours"][dt.hour] += 1
                         if msg.get("role") == "assistant":
+                            if msg.get("model"):
+                                res["models"][str(msg["model"])] += 1
                             for blk in msg.get("content") or []:
-                                if isinstance(blk, dict) and blk.get("type") == "toolCall":
-                                    name = str(blk.get("name") or "tool")
-                                    if name in ("exec", "bash", "shell"):
-                                        res["tools"]["Bash"] += 1
-                                        args = blk.get("arguments") or {}
-                                        if isinstance(args, dict) and isinstance(args.get("command"), str):
-                                            analyze_bash_command(args["command"], res["verbs"], res["bflags"])
-                                    else:
-                                        res["tools"][name] += 1
+                                if isinstance(blk, dict) and blk.get("type") in ("toolCall", "tool_use"):
+                                    _record_tool(res, blk.get("name"), blk.get("arguments") or blk.get("input"))
         except Exception as e:
-            warnings.append(f"openclaw session read failed: {type(e).__name__}")
+            warnings.append(f"{label} session read failed: {type(e).__name__}")
         if sess_active:
             res["sessions"] += 1
+    return res
+
+
+def collect_openclaw(home: Path, tz_offset: float, target_year: int | None, warnings: list[str]) -> dict[str, Any]:
+    """Collect OpenClaw agent transcripts."""
+    return _scan_openclaw_root(home / ".openclaw" / "agents", tz_offset, target_year, warnings, "openclaw")
+
+
+def collect_autoclaw(home: Path, tz_offset: float, target_year: int | None, warnings: list[str]) -> dict[str, Any]:
+    """Collect AutoClaw sessions & background task runs."""
+    ac_dir = home / ".openclaw-autoclaw"
+    res = _scan_openclaw_root(ac_dir / "agents", tz_offset, target_year, warnings, "autoclaw")
+    db = ac_dir / "tasks" / "runs.sqlite"
+    if db.exists():
+        try:
+            con = sqlite3.connect(f"file:{db}?immutable=1", uri=True)
+            for row in con.execute("SELECT created_at, task_kind FROM task_runs"):
+                dt = parse_epoch_dt(row[0] or 0, tz_offset)
+                if not _year_matches(dt, target_year):
+                    continue
+                res["detected"] = True
+                res["subagents"] += 1
+                if dt:
+                    res["hours"][dt.hour] += 1
+                    res["days"].add(dt.strftime("%Y-%m-%d"))
+            con.close()
+        except Exception as e:
+            warnings.append(f"autoclaw runs db failed: {type(e).__name__}")
+    res["detected"] = res["sessions"] > 0 or res["subagents"] > 0 or sum(res["tools"].values()) > 0
     return res
 
 
@@ -913,12 +986,564 @@ def collect_cursor(home: Path, tz_offset: float, target_year: int | None, warnin
     return res
 
 
+_IDE_APPS = (
+    "Code", "Code - Insiders", "Cursor", "Windsurf",
+    "Trae", "Trae CN", "Kiro", "Qoder", "VSCodium", "Positron",
+)
+_SKIP_WALK_DIRS = {
+    "skills", "bundled", "Cache", "CachedData", "GPUCache", "Code Cache",
+    "Crashpad", "Service Worker", "blob_storage", "node_modules", ".git",
+    "__pycache__", "extensions", "bin", "dist", "build", "logs",
+}
+_SESSION_SUBDIRS = (
+    "sessions", "session-state", "projects", "chats", "threads",
+    "tasks", "history", "conversations", "agent-transcripts", "events", "storage",
+)
+
+
+def _ide_user_roots(home: Path, apps: tuple[str, ...] = _IDE_APPS) -> list[Path]:
+    roots: list[Path] = []
+    for base in (
+        home / "Library" / "Application Support",
+        home / ".config",
+        home / "AppData" / "Roaming",
+    ):
+        if not base.exists():
+            continue
+        for app in apps:
+            u = base / app / "User"
+            if u.exists():
+                roots.append(u)
+    return roots
+
+
+def _ingest_generic_obj(
+    obj: Any, res: dict[str, Any], tz_offset: float, target_year: int | None, _depth: int = 0
+) -> tuple[bool, bool]:
+    """Extract timestamps, models, and tool calls from heterogeneous agent JSON shapes."""
+    if _depth > 5 or not isinstance(obj, (dict, list)):
+        return False, False
+    if isinstance(obj, list):
+        act, saw = False, False
+        for item in obj[:2000]:
+            a, s = _ingest_generic_obj(item, res, tz_offset, target_year, _depth + 1)
+            act = act or a
+            saw = saw or s
+        return act, saw
+
+    dt: datetime.datetime | None = None
+    for tk in ("timestamp", "createdAt", "created_at", "creationDate", "startTime", "ts", "time", "date"):
+        if tk in obj:
+            raw_t = obj.get(tk)
+            if tk == "time" and isinstance(raw_t, dict):
+                raw_t = raw_t.get("created") or raw_t.get("start")
+            dt = _parse_any_dt(raw_t, tz_offset)
+            if dt:
+                break
+    saw_dt = dt is not None
+    active = _year_matches(dt, target_year)
+
+    if active and dt:
+        res["days"].add(dt.strftime("%Y-%m-%d"))
+        if obj.get("role") == "user" or obj.get("type") in ("user", "user.message", "prompt"):
+            res["hours"][dt.hour] += 1
+
+    for mk in ("model", "modelId", "model_id", "requestedModel", "selectedModel", "modelName"):
+        mv = obj.get(mk)
+        if active and isinstance(mv, str) and mv.strip() and len(mv) < 120:
+            res["models"][mv.strip()] += 1
+            break
+
+    for pk in ("cwd", "workspace", "projectPath", "project"):
+        pv = obj.get(pk)
+        if active and isinstance(pv, str) and pv.strip():
+            res["projects"].add(pv.strip())
+
+    # Direct single tool-use / OpenCode tool object
+    if active and obj.get("type") == "tool" and obj.get("tool"):
+        st_obj = obj.get("state") if isinstance(obj.get("state"), dict) else {}
+        _record_tool(res, obj.get("tool"), st_obj.get("input") or obj.get("input"))
+    elif active and obj.get("type") in ("tool_use", "toolCall", "function_call", "tool_call") and (obj.get("name") or obj.get("toolName")):
+        _record_tool(res, obj.get("name") or obj.get("toolName"), obj.get("input") or obj.get("arguments") or obj.get("args"))
+
+    # Nested functionCall (Gemini style)
+    if active and isinstance(obj.get("functionCall"), dict):
+        fc = obj["functionCall"]
+        _record_tool(res, fc.get("name"), fc.get("args"))
+
+    # Tool lists (OpenAI / Copilot / Gemini CLI)
+    if active:
+        for list_key in ("tool_calls", "toolCalls", "toolRequests"):
+            tcs = obj.get(list_key)
+            if isinstance(tcs, list):
+                turn_n = 0
+                for tc in tcs:
+                    if not isinstance(tc, dict):
+                        continue
+                    turn_n += 1
+                    fn = tc.get("function") if isinstance(tc.get("function"), dict) else tc
+                    _record_tool(res, fn.get("name") or fn.get("toolName"), fn.get("arguments") or fn.get("args") or fn.get("input"))
+                if turn_n:
+                    res["turn_sizes"].append(turn_n)
+
+    # Recurse selectively into known conversation containers
+    for ck in ("message", "messages", "content", "parts", "requests", "items", "turns", "data", "v"):
+        sub = obj.get(ck)
+        if isinstance(sub, (dict, list)):
+            a, s = _ingest_generic_obj(sub, res, tz_offset, target_year, _depth + 1)
+            active = active or a
+            saw_dt = saw_dt or s
+    return active, saw_dt
+
+
+def _scan_json_or_jsonl_file(
+    fp: Path, res: dict[str, Any], tz_offset: float, target_year: int | None
+) -> bool:
+    """Parse one JSON (<=25MB) or JSONL (<=100MB stream) transcript cleanly."""
+    try:
+        st = fp.stat()
+        max_bytes = 25 * 1024 * 1024 if fp.suffix == ".json" else 100 * 1024 * 1024
+        if st.st_size == 0 or st.st_size > max_bytes:
+            return False
+        mtime_dt = parse_epoch_dt(st.st_mtime, tz_offset)
+    except OSError:
+        return False
+
+    fres = _new_harness_res(False)
+    matched = False
+    saw_dt = False
+    if fp.suffix == ".json":
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8", errors="ignore"))
+            matched, saw_dt = _ingest_generic_obj(data, fres, tz_offset, target_year)
+        except Exception:
+            return False
+    else:
+        try:
+            with fp.open("r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        d = json.loads(line)
+                    except Exception:
+                        continue
+                    a, s = _ingest_generic_obj(d, fres, tz_offset, target_year)
+                    matched = matched or a
+                    saw_dt = saw_dt or s
+        except Exception:
+            return False
+
+    if not saw_dt and not _year_matches(mtime_dt, target_year):
+        return False
+    if not matched and saw_dt:
+        return False
+
+    for ck in ("tools", "models", "verbs", "bflags", "hours"):
+        res[ck].update(fres[ck])
+    res["days"].update(fres["days"])
+    res["projects"].update(fres["projects"])
+    res["turn_sizes"].extend(fres["turn_sizes"])
+    if not saw_dt and mtime_dt:
+        res["days"].add(mtime_dt.strftime("%Y-%m-%d"))
+    if not fres["hours"] and mtime_dt:
+        res["hours"][mtime_dt.hour] += 1
+    return True
+
+
+def collect_copilot(home: Path, tz_offset: float, target_year: int | None, warnings: list[str]) -> dict[str, Any]:
+    """Collect GitHub Copilot CLI (~/.copilot) & VS Code Copilot Chat sessions."""
+    res = _new_harness_res(False)
+    cop_dir = home / ".copilot"
+
+    # 1. Copilot CLI session-state/*/events.jsonl
+    state_dir = cop_dir / "session-state"
+    if state_dir.exists():
+        for ef in state_dir.glob("*/events.jsonl"):
+            sess_active = False
+            saw_dt = False
+            seen_call_ids: set[str] = set()
+            turn_n = 0
+            try:
+                with ef.open("r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        try:
+                            d = json.loads(line)
+                        except Exception:
+                            continue
+                        dt = _parse_any_dt(d.get("timestamp", ""), tz_offset)
+                        if dt:
+                            saw_dt = True
+                        if not _year_matches(dt, target_year):
+                            continue
+                        sess_active = True
+                        if dt:
+                            res["days"].add(dt.strftime("%Y-%m-%d"))
+                        ev_type = d.get("type")
+                        data = d.get("data") if isinstance(d.get("data"), dict) else {}
+                        if ev_type in ("session.start", "user.message"):
+                            if ev_type == "user.message" and dt:
+                                res["hours"][dt.hour] += 1
+                            if data.get("selectedModel"):
+                                res["models"][str(data["selectedModel"])] += 1
+                        elif ev_type == "assistant.turn_start":
+                            turn_n = 0
+                        elif ev_type == "assistant.turn_end":
+                            if turn_n:
+                                res["turn_sizes"].append(turn_n)
+                            turn_n = 0
+                        elif ev_type == "tool.execution_start":
+                            cid = str(data.get("toolCallId") or "")
+                            if cid:
+                                seen_call_ids.add(cid)
+                            turn_n += 1
+                            if data.get("model"):
+                                res["models"][str(data["model"])] += 1
+                            _record_tool(res, data.get("toolName"), data.get("arguments"))
+                        elif ev_type == "assistant.message":
+                            if data.get("model"):
+                                res["models"][str(data["model"])] += 1
+                            for tr in data.get("toolRequests") or []:
+                                if not isinstance(tr, dict):
+                                    continue
+                                cid = str(tr.get("toolCallId") or "")
+                                if cid and cid in seen_call_ids:
+                                    continue
+                                if cid:
+                                    seen_call_ids.add(cid)
+                                turn_n += 1
+                                _record_tool(res, tr.get("name"), tr.get("arguments"))
+            except Exception as e:
+                warnings.append(f"copilot events read failed: {type(e).__name__}")
+            if sess_active:
+                res["sessions"] += 1
+
+    # 2. VS Code Copilot Chat sessions
+    for uroot in _ide_user_roots(home, ("Code", "Code - Insiders", "VSCodium")):
+        ws = uroot / "workspaceStorage"
+        if not ws.exists():
+            continue
+        for cf in list(ws.glob("*/chatSessions/*.jsonl")) + list(ws.glob("*/chatSessions/*.json")):
+            if _scan_json_or_jsonl_file(cf, res, tz_offset, target_year):
+                res["sessions"] += 1
+
+    res["detected"] = res["sessions"] > 0 or sum(res["tools"].values()) > 0
+    return res
+
+
+def collect_gemini_cli(home: Path, tz_offset: float, target_year: int | None, warnings: list[str]) -> dict[str, Any]:
+    """Collect Google Gemini CLI sessions (~/.gemini/tmp/*/chats, ~/.gemini/history)."""
+    res = _new_harness_res(False)
+    gem = home / ".gemini"
+    matched_proj_dirs: set[Path] = set()
+    for pat in ("tmp/*/chats/*.json", "history/*.json", "history/*.jsonl"):
+        for fp in gem.glob(pat):
+            if "antigravity" in fp.parts:
+                continue
+            if _scan_json_or_jsonl_file(fp, res, tz_offset, target_year):
+                res["sessions"] += 1
+                if fp.parent.name == "chats":
+                    matched_proj_dirs.add(fp.parent.parent)
+    for fp in gem.glob("tmp/*/logs.json"):
+        if "antigravity" in fp.parts or fp.parent in matched_proj_dirs:
+            continue
+        if _scan_json_or_jsonl_file(fp, res, tz_offset, target_year):
+            res["sessions"] += 1
+    res["detected"] = res["sessions"] > 0 or sum(res["tools"].values()) > 0
+    return res
+
+
+def collect_ide_extension_agent(
+    home: Path,
+    tz_offset: float,
+    target_year: int | None,
+    warnings: list[str],
+    ext_ids: tuple[str, ...],
+    dotdirs: tuple[str, ...],
+) -> dict[str, Any]:
+    """Collect Cline, Roo Code, and Kilo Code task conversation histories."""
+    res = _new_harness_res(False)
+    task_roots: list[Path] = []
+    for uroot in _ide_user_roots(home):
+        for eid in ext_ids:
+            t = uroot / "globalStorage" / eid / "tasks"
+            if t.exists():
+                task_roots.append(t)
+    for dd in dotdirs:
+        for sub in ("tasks", "sessions", "history"):
+            p = home / dd / sub
+            if p.exists():
+                task_roots.append(p)
+    for root in task_roots:
+        for child in root.iterdir():
+            if child.is_dir():
+                hist = child / "api_conversation_history.json"
+                if hist.exists() and _scan_json_or_jsonl_file(hist, res, tz_offset, target_year):
+                    res["sessions"] += 1
+            elif child.suffix in (".json", ".jsonl"):
+                if _scan_json_or_jsonl_file(child, res, tz_offset, target_year):
+                    res["sessions"] += 1
+    res["detected"] = res["sessions"] > 0 or sum(res["tools"].values()) > 0
+    return res
+
+
+def collect_opencode(home: Path, tz_offset: float, target_year: int | None, warnings: list[str]) -> dict[str, Any]:
+    """Collect OpenCode JSON storage and SQLite sessions."""
+    res = _new_harness_res(False)
+    oc_dir = home / ".local" / "share" / "opencode"
+    sess_dir = oc_dir / "storage" / "session"
+    if sess_dir.exists():
+        for sf in sess_dir.rglob("*.json"):
+            if _scan_json_or_jsonl_file(sf, res, tz_offset, target_year):
+                res["sessions"] += 1
+    for sub in ("message", "part"):
+        sd = oc_dir / "storage" / sub
+        if sd.exists():
+            for mf in list(sd.rglob("*.json"))[:1000]:
+                _scan_json_or_jsonl_file(mf, res, tz_offset, target_year)
+    db = oc_dir / "opencode.db"
+    if db.exists() and res["sessions"] == 0:
+        try:
+            con = sqlite3.connect(f"file:{db}?immutable=1", uri=True)
+            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "session" in tables:
+                for row in con.execute("SELECT time_created FROM session"):
+                    dt = parse_epoch_dt(row[0] or 0, tz_offset)
+                    if _year_matches(dt, target_year):
+                        res["sessions"] += 1
+                        if dt:
+                            res["hours"][dt.hour] += 1
+                            res["days"].add(dt.strftime("%Y-%m-%d"))
+            if "part" in tables:
+                for row in con.execute("SELECT data, time_created FROM part LIMIT 5000"):
+                    dt = parse_epoch_dt(row[1] or 0, tz_offset)
+                    if not _year_matches(dt, target_year):
+                        continue
+                    try:
+                        pd = json.loads(row[0] or "{}")
+                        if isinstance(pd, dict) and pd.get("type") == "tool":
+                            _record_tool(res, pd.get("tool"), (pd.get("state") or {}).get("input"))
+                    except Exception:
+                        pass
+            con.close()
+        except Exception as e:
+            warnings.append(f"opencode db read failed: {type(e).__name__}")
+    res["detected"] = res["sessions"] > 0 or sum(res["tools"].values()) > 0
+    return res
+
+
+def collect_windsurf_continue_goose_aider(
+    home: Path, tz_offset: float, target_year: int | None, warnings: list[str]
+) -> list[tuple[str, str, dict[str, Any]]]:
+    """Collect Windsurf, Continue, Goose, and Aider harnesses."""
+    out: list[tuple[str, str, dict[str, Any]]] = []
+
+    # 1. Windsurf (Cascade + Windsurf IDE chatSessions; never decode binary .pb contents)
+    ws_res = _new_harness_res(False)
+    cas = home / ".codeium" / "windsurf" / "cascade"
+    if cas.exists():
+        for cf in cas.iterdir():
+            if not cf.is_file():
+                continue
+            if cf.suffix in (".json", ".jsonl"):
+                if _scan_json_or_jsonl_file(cf, ws_res, tz_offset, target_year):
+                    ws_res["sessions"] += 1
+            elif cf.suffix == ".pb" and cf.stat().st_size > 64:
+                dt = parse_epoch_dt(cf.stat().st_mtime, tz_offset)
+                if _year_matches(dt, target_year):
+                    ws_res["sessions"] += 1
+                    if dt:
+                        ws_res["hours"][dt.hour] += 1
+                        ws_res["days"].add(dt.strftime("%Y-%m-%d"))
+    for uroot in _ide_user_roots(home, ("Windsurf",)):
+        for cf in uroot.glob("workspaceStorage/*/chatSessions/*.json*"):
+            if _scan_json_or_jsonl_file(cf, ws_res, tz_offset, target_year):
+                ws_res["sessions"] += 1
+    ws_res["detected"] = ws_res["sessions"] > 0 or sum(ws_res["tools"].values()) > 0
+    out.append(("windsurf", "Windsurf", ws_res))
+
+    # 2. Continue
+    ct_res = _new_harness_res(False)
+    ct_dir = home / ".continue" / "sessions"
+    if ct_dir.exists():
+        for cf in ct_dir.glob("*.json*"):
+            if _scan_json_or_jsonl_file(cf, ct_res, tz_offset, target_year):
+                ct_res["sessions"] += 1
+    ct_res["detected"] = ct_res["sessions"] > 0 or sum(ct_res["tools"].values()) > 0
+    out.append(("continue", "Continue", ct_res))
+
+    # 3. Goose
+    gs_res = _new_harness_res(False)
+    for gd in (home / ".local" / "share" / "goose" / "sessions", home / ".config" / "goose" / "sessions"):
+        if gd.exists():
+            for gf in list(gd.glob("*.jsonl")) + list(gd.glob("*.json")):
+                if _scan_json_or_jsonl_file(gf, gs_res, tz_offset, target_year):
+                    gs_res["sessions"] += 1
+            gdb = gd / "sessions.db"
+            if gdb.exists() and gs_res["sessions"] == 0:
+                try:
+                    con = sqlite3.connect(f"file:{gdb}?immutable=1", uri=True)
+                    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                    if "sessions" in tables:
+                        for row in con.execute("SELECT created_at FROM sessions"):
+                            dt = _parse_any_dt(row[0], tz_offset)
+                            if _year_matches(dt, target_year):
+                                gs_res["sessions"] += 1
+                                if dt:
+                                    gs_res["hours"][dt.hour] += 1
+                                    gs_res["days"].add(dt.strftime("%Y-%m-%d"))
+                    con.close()
+                except Exception:
+                    pass
+    gs_res["detected"] = gs_res["sessions"] > 0 or sum(gs_res["tools"].values()) > 0
+    out.append(("goose", "Goose", gs_res))
+
+    # 4. Aider (header timestamps + /run|/test counts only, never reading prose)
+    ad_res = _new_harness_res(False)
+    hist_md = home / ".aider.chat.history.md"
+    if hist_md.exists():
+        try:
+            with hist_md.open("r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if line.startswith("# aider chat started at "):
+                        ts = line[len("# aider chat started at "):].strip().replace(" ", "T") + "Z"
+                        dt = parse_iso_dt(ts, tz_offset)
+                        if _year_matches(dt, target_year):
+                            ad_res["sessions"] += 1
+                            if dt:
+                                ad_res["hours"][dt.hour] += 1
+                                ad_res["days"].add(dt.strftime("%Y-%m-%d"))
+                    elif line.startswith("/run ") or line.startswith("/test "):
+                        _record_tool(ad_res, "Bash", {"command": line.split(" ", 1)[1]})
+        except Exception:
+            pass
+    ad_desk = home / ".aider-desk"
+    if ad_desk.exists():
+        for sub in _SESSION_SUBDIRS:
+            sd = ad_desk / sub
+            if sd.exists():
+                for fp in list(sd.rglob("*.jsonl"))[:300] + list(sd.rglob("*.json"))[:300]:
+                    if _scan_json_or_jsonl_file(fp, ad_res, tz_offset, target_year):
+                        ad_res["sessions"] += 1
+    ad_res["detected"] = ad_res["sessions"] > 0 or sum(ad_res["tools"].values()) > 0
+    out.append(("aider", "Aider", ad_res))
+    return out
+
+
+_GENERIC_AGENT_SPECS: list[tuple[str, str, tuple[str, ...]]] = [
+    ("amp", "Amp", (".local/share/amp", ".amp")),
+    ("crush", "Crush", (".local/share/crush", ".crush")),
+    ("qwen", "Qwen Code", (".qwen",)),
+    ("trae", "Trae", (".trae", ".trae-cn")),
+    ("qoder", "Qoder", (".qoder", ".qoder-cn")),
+    ("kiro", "Kiro", (".kiro",)),
+    ("factory", "Factory Droid", (".factory",)),
+    ("openhands", "OpenHands", (".openhands",)),
+    ("vibe", "Mistral Vibe", (".vibe",)),
+    ("hermes", "Hermes", (".hermes",)),
+    ("junie", "Junie", (".junie",)),
+    ("augment", "Augment", (".augment",)),
+    ("iflow", "iFlow", (".iflow",)),
+    ("grok", "Grok CLI", (".grok", ".grokbot")),
+    ("lingma", "Lingma", (".lingma",)),
+    ("codebuddy", "CodeBuddy", (".codebuddy",)),
+    ("pi", "Pi", (".pi",)),
+    ("mux", "Mux", (".mux",)),
+    ("zencoder", "Zencoder", (".zencoder",)),
+    ("rovodev", "Rovo Dev", (".rovodev",)),
+    ("codeartsdoer", "CodeArts Doer", (".codeartsdoer",)),
+    ("zed", "Zed AI", (".local/share/zed", "Library/Application Support/Zed")),
+]
+
+
+_NOISY_GENERIC_FILES = {
+    "tool_definitions.json", "announcement_state.json", "resources_state.json",
+    "prompt_context.json", "signals.json", "rewind_points.jsonl",
+    "sandbox-events.jsonl", "updates.jsonl", "prompt_history.jsonl",
+    "compaction_requests.jsonl", "compaction_checkpoints.jsonl", "meta.json",
+    "summary.json", "usage.json", "plan.json", "plan_mode.json",
+    "settings.json", "manifest.json", "config.json",
+}
+
+
+def collect_generic_harnesses(
+    home: Path, tz_offset: float, target_year: int | None
+) -> list[tuple[str, str, dict[str, Any]]]:
+    """Scan session/transcript dirs (never skill-only or noisy state files) across 20+ agents."""
+    results: list[tuple[str, str, dict[str, Any]]] = []
+    for hid, display_name, rel_roots in _GENERIC_AGENT_SPECS:
+        res = _new_harness_res(False)
+        scanned_files = 0
+        seen_session_keys: set[Path] = set()
+        seen_subagent_keys: set[Path] = set()
+        for rel in rel_roots:
+            base = home / rel
+            if not base.exists():
+                continue
+            for sub in _SESSION_SUBDIRS + ("conversations", "prompts"):
+                cand = base / sub
+                if not cand.exists():
+                    continue
+                for root, dirs, fnames in os.walk(cand, followlinks=False):
+                    dirs[:] = [d for d in dirs if d not in _SKIP_WALK_DIRS]
+                    for fn in fnames:
+                        if scanned_files >= 400:
+                            break
+                        if fn in _NOISY_GENERIC_FILES or not (fn.endswith(".jsonl") or fn.endswith(".json")):
+                            continue
+                        fp = Path(root) / fn
+                        scanned_files += 1
+                        if _scan_json_or_jsonl_file(fp, res, tz_offset, target_year):
+                            is_sub = "subagents" in fp.parts
+                            # Group sibling files inside a UUID/session dir as one session
+                            key = fp if fp.parent == cand else fp.parent
+                            if is_sub:
+                                seen_subagent_keys.add(fp.parent)
+                            else:
+                                seen_session_keys.add(key)
+                    if scanned_files >= 400:
+                        break
+        res["sessions"] = len(seen_session_keys)
+        res["subagents"] = len(seen_subagent_keys)
+        res["detected"] = res["sessions"] > 0 or res["subagents"] > 0 or sum(res["tools"].values()) > 0
+        if res["detected"]:
+            results.append((hid, display_name, res))
+    return results
+
+
+def _count_unique_ecosystem_skills(home: Path, claude_count: int) -> int:
+    """Count unique skill folders across agent skill roots without inflating duplicates."""
+    skill_roots = [
+        home / ".claude" / "skills",
+        home / ".agents" / "skills",
+        home / ".codex" / "skills",
+        home / ".gemini" / "antigravity" / "skills",
+        home / ".gemini" / "skills",
+        home / ".kimi" / "skills",
+        home / ".copilot" / "skills",
+        home / ".local" / "share" / "opencode" / "skills",
+    ]
+    names: set[str] = set()
+    for sr in skill_roots:
+        if not sr.exists():
+            continue
+        try:
+            for item in sr.iterdir():
+                if item.is_dir() and not item.name.startswith("."):
+                    names.add(item.name)
+        except OSError:
+            pass
+    return max(claude_count, len(names))
+
+
 def clamp_score(val: float) -> int:
     return max(0, min(100, int(round(val))))
 
 
 def compute_radar_and_fallback(facts: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Compute balanced 6-axis scores (0..100) and deterministic fallback persona."""
+    """Compute 6 fixed universal viral radar scores (0..100) and punchy fallback persona."""
     totals = facts["totals"]
     inv = facts["inventory"]
     bdna = facts["bash_dna"]
@@ -928,210 +1553,168 @@ def compute_radar_and_fallback(facts: dict[str, Any]) -> tuple[list[dict[str, An
     multi_pct = totals["multi_tool_turn_pct"]
     bash_pct = totals["bash_share_pct"]
     night_pct = facts["night_owl_pct"]
-    detected_harnesses = sum(1 for h in facts["harnesses"] if h["detected"])
+    active_harnesses = sum(
+        1 for h in facts["harnesses"] if h["detected"] and (h["sessions"] > 0 or h["tool_calls"] > 0 or h["subagents"] > 0)
+    )
+    detected_harnesses = active_harnesses or sum(1 for h in facts["harnesses"] if h["detected"])
     test_cmds = bdna.get("test_cmd_count", 0)
+    total_gear = inv["skills_installed"] + inv["agents_installed"] + facts["distinct_tools"]
 
-    orchestration = clamp_score(
-        20
-        + 26 * min(1.0, math.log1p(totals["subagent_sessions"]) / math.log1p(2500))
+    # 6 fixed universal dimensions shared across all users (never tailored per user)
+    night_owl = clamp_score(
+        12 + 68 * min(1.0, night_pct / 60.0) + 20 * min(1.0, (1.0 if facts["peak_hour"] in (22, 23, 0, 1, 2, 3, 4, 5) and totals["tool_calls"] > 0 else 0.0))
+    )
+    boss_energy = clamp_score(
+        15
+        + (22 if inv["auto_or_bypass"] else 4)
         + 24 * min(1.0, math.log1p(sub_ratio) / math.log1p(8.0))
-        + 15 * min(1.0, multi_pct / 22.0)
-        + 15 * min(1.0, totals["max_parallel_turn"] / 18.0)
+        + 20 * min(1.0, math.log1p(facts["loop_or_cron_count"]) / math.log1p(300))
+        + 19 * min(1.0, multi_pct / 22.0)
     )
-    shell_craft = clamp_score(
+    gear_hoarder = clamp_score(
+        12
+        + 30 * min(1.0, detected_harnesses / 6.0)
+        + 34 * min(1.0, math.log1p(total_gear) / math.log1p(450))
+        + 24 * min(1.0, math.log1p(inv["plugins_unused"] + inv["plugins_total"]) / math.log1p(50))
+    )
+    trust_issues = clamp_score(
         18
-        + 42 * min(1.0, bash_pct / 75.0)
-        + 22 * min(1.0, bdna["piped_pct"] / 72.0)
-        + 16 * min(1.0, math.log1p(bdna["heredoc_count"]) / math.log1p(15000))
+        + 34 * min(1.0, math.log1p(test_cmds) / math.log1p(2500))
+        + 26 * min(1.0, math.log1p(facts["verification_signals"]) / math.log1p(120))
+        + 22 * min(1.0, math.log1p(bdna["rtk_proxy_count"]) / math.log1p(1500))
     )
-    domain_span = clamp_score(
-        18
-        + 38 * min(1.0, detected_harnesses / 6.0)
-        + 24 * min(1.0, math.log1p(facts["distinct_projects"]) / math.log1p(300))
-        + 18 * min(1.0, math.log1p(facts["distinct_tools"]) / math.log1p(180))
+    chaos_grit = clamp_score(
+        16
+        + 36 * min(1.0, bash_pct / 75.0)
+        + 24 * min(1.0, bdna["piped_pct"] / 72.0)
+        + 24 * min(1.0, math.log1p(bdna["heredoc_count"] + facts["distinct_projects"]) / math.log1p(15000))
     )
-    verification = clamp_score(
-        20
-        + 44 * min(1.0, math.log1p(test_cmds) / math.log1p(2500))
-        + 32 * min(1.0, math.log1p(facts["verification_signals"]) / math.log1p(120))
-    )
-    night_ops = clamp_score(
-        18
-        + 60 * min(1.0, night_pct / 60.0)
-        + 20 * min(1.0, totals["active_days"] / 180.0)
-    )
-    autonomy = clamp_score(
-        22
-        + (34 if inv["auto_or_bypass"] else 5)
-        + 22 * min(1.0, math.log1p(facts["loop_or_cron_count"]) / math.log1p(400))
-        + 20 * min(1.0, math.log1p(totals["tool_calls"]) / math.log1p(180000))
+    ai_addict = clamp_score(
+        10
+        + 32 * min(1.0, totals["active_days"] / 180.0)
+        + 30 * min(1.0, math.log1p(totals["tool_calls"]) / math.log1p(180000))
+        + 28 * min(1.0, math.log1p(totals["sessions"] + totals["subagent_sessions"]) / math.log1p(4000))
     )
 
     axes = [
-        {"key": "orchestration", "label": "编排杠杆", "label_en": "Orchestration", "score": orchestration},
-        {"key": "shell_craft", "label": "终端功底", "label_en": "Shell Craft", "score": shell_craft},
-        {"key": "domain_span", "label": "跨界广度", "label_en": "Domain Span", "score": domain_span},
-        {"key": "verification", "label": "工程洁癖", "label_en": "Verification", "score": verification},
-        {"key": "night_ops", "label": "夜战耐力", "label_en": "Night Ops", "score": night_ops},
-        {"key": "autonomy", "label": "放权程度", "label_en": "Autonomy", "score": autonomy},
+        {"key": "night_owl", "label": "夜猫纯度", "label_en": "Night Owl", "score": night_owl},
+        {"key": "boss_energy", "label": "甩手掌柜", "label_en": "Boss Energy", "score": boss_energy},
+        {"key": "gear_hoarder", "label": "装备狂魔", "label_en": "Gear Hoarder", "score": gear_hoarder},
+        {"key": "trust_issues", "label": "疑心洁癖", "label_en": "Trust Issues", "score": trust_issues},
+        {"key": "chaos_grit", "label": "硬核折腾", "label_en": "Chaos Grit", "score": chaos_grit},
+        {"key": "ai_addict", "label": "含AI量", "label_en": "AI Addict", "score": ai_addict},
     ]
 
-    if night_pct >= 45 and totals["subagent_sessions"] >= 50:
-        arch = (
-            "nightshift-orchestrator",
-            "深夜蜂群总工",
-            "Nightshift Swarm Architect",
-            f"凌晨 {facts['peak_hour']:02d}:00 才是你的早高峰，一个主会话能裂变出成百上千个子代理。",
-            f"{facts['peak_hour']:02d}:00 is your morning rush hour, spinning one session into swarms of subagents.",
-        )
-    elif totals["subagent_sessions"] > totals["sessions"] * 2:
-        arch = (
-            "swarm-commander",
-            "蜂群指挥官",
-            "Swarm Commander",
-            "比起亲自一行行敲代码，你更习惯同时拉起多个工作树与子代理流水线。",
-            "Why edit line by line when you can orchestrate parallel worktrees and agent pipelines.",
-        )
-    elif bash_pct >= 62:
-        arch = (
-            "shell-alchemist",
-            "终端炼金术士",
-            "Shell Alchemist",
-            f"{bash_pct:.1f}% 的工具调用直奔终端，万物皆可一行管道 + heredoc 解决。",
-            f"{bash_pct:.1f}% of all tool calls go straight to Bash — pipelines and heredocs rule everything.",
-        )
-    elif detected_harnesses >= 4:
-        arch = (
-            "fullstack-maverick",
-            "跨界特种兵",
-            "Full-Stack Maverick",
-            f"同时驾驭 {detected_harnesses} 套 AI Harness 与跨软件工具链，哪把顺手用哪把。",
-            f"Wielding {detected_harnesses} AI harnesses side by side — whichever fits the mission wins.",
-        )
-    elif verification >= 80:
-        arch = (
-            "verification-purist",
-            "洁癖守门人",
-            "Verification Purist",
-            "不拿到实测输出和只读复核结论，绝不轻易宣称完成。",
-            "Nothing ships without live verification and an independent read-only audit.",
-        )
-    elif inv["auto_or_bypass"]:
-        arch = (
-            "full-auto-speedrunner",
-            "全自动狂飙派",
-            "Full-Auto Speedrunner",
-            "权限全开 + 循环拉满，把确认弹窗的时间全换成吞吐量。",
-            "Full-auto permissions with continuous loops — zero clicks wasted on confirmations.",
-        )
-    else:
-        arch = (
-            "minimalist-craftsman",
-            "克制极简派",
-            "Minimalist Craftsman",
-            "工具不多，但每次 Read/Edit 都切在要害上。",
-            "Fewer tools, sharper cuts — every Read and Edit lands cleanly.",
-        )
+    # Keep fallback strictly neutral and factual: bespoke personality/archetype analysis
+    # is delegated to the user's own AI agent via the prompt in SKILL.md.
+    peak_hr = facts["peak_hour"]
+    if totals["sessions"] == 0 and totals["tool_calls"] == 0:
+        fallback = {
+            "archetype_id": "wrapped-snapshot",
+            "archetype_title": f"{facts['year']} AI 档案快照",
+            "archetype_en": f"{facts['year']} AI Snapshot",
+            "one_liner": "暂未扫描到本地 Agent 行动记录，在对话里唤醒 AI 即可解锁你的专属人格。",
+            "one_liner_en": "No local agent logs found yet — run this skill with an AI agent once active.",
+            "secondary_badges": ["待解锁记录", "100% 本地统计"],
+            "secondary_badges_en": ["No Logs Yet", "100% Local"],
+            "memes": [
+                {
+                    "tag": "0 场对话",
+                    "tag_en": "0 Sessions",
+                    "line": "本机暂未检测到该年份的 Agent 会话日志（可尝试加上 --all-time 参数）。",
+                    "line_en": "No agent sessions recorded for this year yet (try --all-time).",
+                },
+                {
+                    "tag": "0 次调用",
+                    "tag_en": "0 Tool Calls",
+                    "line": "等你在终端或编辑器里让 AI 跑几轮后，这里会自动填满你的真实战绩。",
+                    "line_en": "Once an agent runs tools in your workspace, your real usage populates here.",
+                },
+                {
+                    "tag": f"{inv['skills_installed']:,} 项本地配置",
+                    "tag_en": f"{inv['skills_installed']:,} Local Skills",
+                    "line": f"检测到 {detected_harnesses} 个本地 Harness、{inv['skills_installed']:,} 个已安装技能。",
+                    "line_en": f"Detected {detected_harnesses} harnesses and {inv['skills_installed']:,} installed skills.",
+                },
+            ],
+            "axis_notes": {
+                "night_owl": "暂无深夜动作记录",
+                "boss_energy": "暂无分身并发记录",
+                "gear_hoarder": f"已装 {inv['skills_installed']:,} 项技能 · {inv['plugins_total']:,} 插件",
+                "trust_issues": "暂无测试校验记录",
+                "chaos_grit": "暂无终端调用记录",
+                "ai_addict": "等待开启今年第 1 次 AI 对话",
+            },
+            "axis_notes_en": {
+                "night_owl": "No late-night runs logged yet",
+                "boss_energy": "No subagent bursts logged yet",
+                "gear_hoarder": f"{inv['skills_installed']:,} skills · {inv['plugins_total']:,} plugins found",
+                "trust_issues": "No verification runs logged yet",
+                "chaos_grit": "No shell tool calls logged yet",
+                "ai_addict": "Ready for your first AI session",
+            },
+        }
+        return axes, fallback
 
-    badges = []
-    badges_en = []
-    if night_pct >= 40:
-        badges.append("深夜突击型")
-        badges_en.append("Night-Shift Raider")
-    if bash_pct >= 55:
-        badges.append("重度管道党")
-        badges_en.append("Pipeline Maximalist")
-    if inv["plugins_unused"] >= 5 or inv["skills_installed"] >= 50:
-        badges.append("赛博松鼠党")
-        badges_en.append("Skill Hoarder")
-    if detected_harnesses >= 3:
-        badges.append("多刀流玩家")
-        badges_en.append("Multi-Harness")
-    if not badges:
-        badges.append("稳健迭代派")
-        badges_en.append("Steady Shipper")
-
-    memes: list[dict[str, str]] = []
-    if totals["bash_calls"] >= 100 and (inv["grep_calls"] <= 5 or inv["grep_calls"] * 200 < totals["bash_calls"]):
-        memes.append({
-            "tag": f"Grep={inv['grep_calls']} · Bash={totals['bash_calls']:,}",
-            "tag_en": f"Grep={inv['grep_calls']} · Bash={totals['bash_calls']:,}",
-            "line": "原生 Grep 形同虚设，管道 grep + head + sed 才是我的主力引擎。",
-            "line_en": "Hardly touched Grep — grep | head | sed is my native runtime.",
-        })
-    if night_pct >= 40:
-        memes.append({
-            "tag": f"峰值 {facts['peak_hour']:02d}:00",
-            "tag_en": f"Peak {facts['peak_hour']:02d}:00",
-            "line": f"{night_pct:.0f}% 的代码与指令诞生在 22:00–05:00，月亮不睡我不睡。",
-            "line_en": f"{night_pct:.0f}% of prompts fired between 22:00 and 05:00 — sleep is optional.",
-        })
-    if bdna["rtk_proxy_count"] >= 10:
-        cnt = bdna["rtk_proxy_count"]
-        memes.append({
-            "tag": f"{cnt:,} 次 rtk proxy",
-            "tag_en": f"{cnt:,}x rtk proxy",
-            "line": "亲手装上输出压缩钩子省 Token，遇到看不清时又亲自喊撤回。",
-            "line_en": f"Installed a token compressor hook, then bypassed it {cnt:,} times for full output.",
-        })
-    if inv["plugins_unused"] >= 5:
-        memes.append({
-            "tag": f"{inv['skills_installed']} 个技能库存",
-            "tag_en": f"{inv['skills_installed']} Skills Installed",
-            "line": f"{inv['plugins_total']} 个插件里有 {inv['plugins_unused']} 个还是零次点击，先收藏就是会了。",
-            "line_en": f"{inv['plugins_unused']} of {inv['plugins_total']} plugins sit at 0 runs — installing counts as learning.",
-        })
-
-    # Distinct fallback fillers so even an empty or daytime profile never duplicates cards
-    filler_pool = [
+    memes: list[dict[str, str]] = [
         {
-            "tag": f"{totals['sessions']:,} 次协作回合",
-            "tag_en": f"{totals['sessions']:,} Sessions",
-            "line": f"累计和本机 {detected_harnesses} 套 Agent 协同完成 {totals['tool_calls']:,} 次动作。",
-            "line_en": f"Executed {totals['tool_calls']:,} tool calls across {detected_harnesses} local AI harnesses.",
+            "tag": f"夜间 {night_pct:.0f}% · 峰值 {peak_hr:02d}:00",
+            "tag_en": f"{night_pct:.0f}% Night · Peak {peak_hr:02d}:00",
+            "line": f"全天最活跃在 {peak_hr:02d}:00，其中 {night_pct:.1f}% 的 AI 动作发生在 22:00–05:00。",
+            "line_en": f"Activity peaks at {peak_hr:02d}:00, with {night_pct:.1f}% occurring between 22:00 and 05:00.",
         },
         {
-            "tag": f"{totals['active_days']:,} 活跃天",
-            "tag_en": f"{totals['active_days']:,} Active Days",
-            "line": f"跨过 {facts['distinct_projects']:,} 个工作区，白天写需求，夜里收工单。",
-            "line_en": f"Shipped across {facts['distinct_projects']:,} workspaces with {night_pct:.0f}% night activity.",
+            "tag": f"Grep={inv['grep_calls']:,} · Bash={totals['bash_calls']:,}",
+            "tag_en": f"Grep={inv['grep_calls']:,} · Bash={totals['bash_calls']:,}",
+            "line": f"原生 Grep 工具调用 {inv['grep_calls']:,} 次，终端 Bash 调用 {totals['bash_calls']:,} 次（占 {bash_pct:.1f}%）。",
+            "line_en": f"Called built-in Grep {inv['grep_calls']:,} times vs {totals['bash_calls']:,} Bash calls ({bash_pct:.1f}%).",
         },
         {
-            "tag": f"并发峰值 {totals['max_parallel_turn']}x",
-            "tag_en": f"Peak {totals['max_parallel_turn']}x Parallel",
-            "line": f"多工具并行率 {totals['multi_tool_turn_pct']:.1f}%，能一轮解决的事绝不拆两轮。",
-            "line_en": f"{totals['multi_tool_turn_pct']:.1f}% multi-tool turns — why wait two turns when one works.",
+            "tag": f"{inv['skills_installed']:,} 技能 · {inv['plugins_unused']:,} 未触发",
+            "tag_en": f"{inv['skills_installed']:,} Skills · {inv['plugins_unused']:,} Unused",
+            "line": f"本地安装 {inv['skills_installed']:,} 个技能与 {inv['plugins_total']:,} 个插件，其中 {inv['plugins_unused']:,} 个尚无使用记录。",
+            "line_en": f"{inv['skills_installed']:,} skills & {inv['plugins_total']:,} plugins installed ({inv['plugins_unused']:,} untouched).",
+        },
+        {
+            "tag": f"峰值并发 {totals['max_parallel_turn']}x · 活跃 {totals['active_days']:,} 天",
+            "tag_en": f"{totals['max_parallel_turn']}x Peak · {totals['active_days']:,} Days",
+            "line": f"跨 {facts['distinct_projects']:,} 个项目与 {detected_harnesses} 个 Agent，单轮最高并发 {totals['max_parallel_turn']} 次工具调用。",
+            "line_en": f"Spanned {facts['distinct_projects']:,} workspaces and {detected_harnesses} harnesses, up to {totals['max_parallel_turn']}x parallel calls.",
         },
     ]
-    for card in filler_pool:
-        if len(memes) >= 3:
-            break
-        memes.append(card)
 
     fallback = {
-        "archetype_id": arch[0],
-        "archetype_title": arch[1],
-        "archetype_en": arch[2],
-        "one_liner": arch[3],
-        "one_liner_en": arch[4],
-        "secondary_badges": badges[:3],
-        "secondary_badges_en": badges_en[:3],
-        "memes": memes[:4],
+        "archetype_id": "wrapped-snapshot",
+        "archetype_title": f"{facts['year']} AI 使用实录",
+        "archetype_en": f"{facts['year']} AI Dev Snapshot",
+        "one_liner": f"跨 {detected_harnesses} 个 Agent 完成 {totals['sessions']:,} 场对话、{totals['tool_calls']:,} 次调用，最晚峰值停在 {peak_hr:02d}:00。",
+        "one_liner_en": f"{totals['sessions']:,} sessions and {totals['tool_calls']:,} tool calls across {detected_harnesses} harnesses, peaking at {peak_hr:02d}:00.",
+        "secondary_badges": [
+            f"{detected_harnesses} 个本地 Agent",
+            f"{totals['active_days']:,} 活跃天",
+            f"峰值 {peak_hr:02d}:00",
+        ],
+        "secondary_badges_en": [
+            f"{detected_harnesses} Harnesses",
+            f"{totals['active_days']:,} Active Days",
+            f"Peak {peak_hr:02d}:00",
+        ],
+        "memes": memes,
         "axis_notes": {
-            "orchestration": f"主会话 {totals['sessions']:,} / 子代理 {totals['subagent_sessions']:,}",
-            "shell_craft": f"Bash 占比 {bash_pct:.1f}%，管道率 {bdna['piped_pct']:.1f}%",
-            "domain_span": f"覆盖 {detected_harnesses} 套 Agent、{facts['distinct_projects']} 个工作区",
-            "verification": f"测试与验证命令 {test_cmds:,} 次",
-            "night_ops": f"夜间活跃 {night_pct:.1f}%，峰值 {facts['peak_hour']:02d}:00",
-            "autonomy": "已启用 Auto/Bypass 自动模式" if inv["auto_or_bypass"] else "审慎确认授权模式",
+            "night_owl": f"{night_pct:.1f}% 夜间动作 · 峰值 {peak_hr:02d}:00",
+            "boss_energy": f"{totals['sessions']:,} 轮对话带出 {totals['subagent_sessions']:,} 个子代理",
+            "gear_hoarder": f"装了 {inv['skills_installed']:,} 技能与 {inv['plugins_total']:,} 插件",
+            "trust_issues": f"{test_cmds:,} 次测试指令 · {bdna['rtk_proxy_count']:,} 次原始查看",
+            "chaos_grit": f"{bash_pct:.1f}% 走终端 · 管道率 {bdna['piped_pct']:.1f}%",
+            "ai_addict": f"全年活跃 {totals['active_days']:,} 天 · 总计 {totals['tool_calls']:,} 次",
         },
         "axis_notes_en": {
-            "orchestration": f"{totals['sessions']:,} main / {totals['subagent_sessions']:,} subagents",
-            "shell_craft": f"{bash_pct:.1f}% Bash · {bdna['piped_pct']:.1f}% piped",
-            "domain_span": f"{detected_harnesses} harnesses · {facts['distinct_projects']} workspaces",
-            "verification": f"{test_cmds:,} test/verify commands",
-            "night_ops": f"{night_pct:.1f}% night activity · peak {facts['peak_hour']:02d}:00",
-            "autonomy": "Auto / Bypass enabled" if inv["auto_or_bypass"] else "Prompt-gated approvals",
+            "night_owl": f"{night_pct:.1f}% after-hours · peak {peak_hr:02d}:00",
+            "boss_energy": f"{totals['sessions']:,} sessions · {totals['subagent_sessions']:,} subagents",
+            "gear_hoarder": f"{inv['skills_installed']:,} skills · {inv['plugins_total']:,} plugins",
+            "trust_issues": f"{test_cmds:,} test runs · {bdna['rtk_proxy_count']:,} raw checks",
+            "chaos_grit": f"{bash_pct:.1f}% raw shell · {bdna['piped_pct']:.1f}% piped",
+            "ai_addict": f"{totals['active_days']:,} active days · {totals['tool_calls']:,} calls",
         },
     }
     return axes, fallback
@@ -1147,12 +1730,28 @@ def collect_all(home: Path, tz_offset: float | None = None, year: int | None = N
 
     home_str = str(home)
     warnings: list[str] = []
-    claude = collect_claude(home, tz_offset, filter_year, warnings)
-    codex = collect_codex(home, tz_offset, filter_year, warnings)
-    antigravity = collect_antigravity(home, tz_offset, filter_year, warnings)
-    kimi = collect_kimi(home, tz_offset, filter_year, warnings)
-    openclaw = collect_openclaw(home, tz_offset, filter_year, warnings)
-    cursor = collect_cursor(home, tz_offset, filter_year, warnings)
+    harness_parts: list[tuple[str, str, dict[str, Any], bool]] = [
+        ("claude", "Claude Code / Desktop", collect_claude(home, tz_offset, filter_year, warnings), True),
+        ("codex", "OpenAI Codex", collect_codex(home, tz_offset, filter_year, warnings), True),
+        ("antigravity", "Antigravity", collect_antigravity(home, tz_offset, filter_year, warnings), True),
+        ("kimi", "Kimi CLI", collect_kimi(home, tz_offset, filter_year, warnings), True),
+        ("openclaw", "OpenClaw", collect_openclaw(home, tz_offset, filter_year, warnings), True),
+        ("autoclaw", "AutoClaw", collect_autoclaw(home, tz_offset, filter_year, warnings), False),
+        ("cursor", "Cursor", collect_cursor(home, tz_offset, filter_year, warnings), True),
+        ("copilot", "GitHub Copilot", collect_copilot(home, tz_offset, filter_year, warnings), False),
+        ("gemini-cli", "Gemini CLI", collect_gemini_cli(home, tz_offset, filter_year, warnings), False),
+        ("cline", "Cline", collect_ide_extension_agent(home, tz_offset, filter_year, warnings, ("saoudrizwan.claude-dev",), (".cline",)), False),
+        ("roo-code", "Roo Code", collect_ide_extension_agent(home, tz_offset, filter_year, warnings, ("rooveterinaryinc.roo-cline",), (".roo",)), False),
+        ("kilo-code", "Kilo Code", collect_ide_extension_agent(home, tz_offset, filter_year, warnings, ("kilocode.kilo-code",), (".kilocode",)), False),
+        ("opencode", "OpenCode", collect_opencode(home, tz_offset, filter_year, warnings), False),
+    ]
+    for hid, dname, hpart in collect_windsurf_continue_goose_aider(home, tz_offset, filter_year, warnings):
+        harness_parts.append((hid, dname, hpart, False))
+    for hid, dname, hpart in collect_generic_harnesses(home, tz_offset, filter_year):
+        harness_parts.append((hid, dname, hpart, False))
+
+    claude = harness_parts[0][2]
+    codex = harness_parts[1][2]
 
     total_tools: Counter[str] = Counter()
     total_models: Counter[str] = Counter()
@@ -1163,7 +1762,7 @@ def collect_all(home: Path, tz_offset: float | None = None, year: int | None = N
     total_projects: set[str] = set()
     turn_sizes: list[int] = []
 
-    for part in (claude, codex, antigravity, kimi, openclaw, cursor):
+    for _, _, part, _ in harness_parts:
         total_tools.update(part.get("tools", {}))
         total_models.update(part.get("models", {}))
         total_verbs.update(part.get("verbs", {}))
@@ -1193,53 +1792,15 @@ def collect_all(home: Path, tz_offset: float | None = None, year: int | None = N
 
     harnesses = [
         {
-            "id": "claude",
-            "name": "Claude Code / Desktop",
-            "detected": claude["detected"],
-            "sessions": claude["sessions"],
-            "subagents": claude["subagents"],
-            "tool_calls": sum(claude["tools"].values()),
-        },
-        {
-            "id": "codex",
-            "name": "OpenAI Codex",
-            "detected": codex["detected"],
-            "sessions": codex["sessions"],
-            "subagents": codex["subagents"],
-            "tool_calls": sum(codex["tools"].values()),
-        },
-        {
-            "id": "antigravity",
-            "name": "Antigravity",
-            "detected": antigravity["detected"],
-            "sessions": antigravity["sessions"],
-            "subagents": 0,
-            "tool_calls": sum(antigravity["tools"].values()),
-        },
-        {
-            "id": "kimi",
-            "name": "Kimi CLI",
-            "detected": kimi["detected"],
-            "sessions": kimi["sessions"],
-            "subagents": 0,
-            "tool_calls": sum(kimi["tools"].values()),
-        },
-        {
-            "id": "openclaw",
-            "name": "OpenClaw",
-            "detected": openclaw["detected"],
-            "sessions": openclaw["sessions"],
-            "subagents": 0,
-            "tool_calls": sum(openclaw["tools"].values()),
-        },
-        {
-            "id": "cursor",
-            "name": "Cursor",
-            "detected": cursor["detected"],
-            "sessions": cursor["sessions"],
-            "subagents": 0,
-            "tool_calls": sum(cursor["tools"].values()),
-        },
+            "id": hid,
+            "name": dname,
+            "detected": bool(part.get("detected")),
+            "sessions": int(part.get("sessions", 0)),
+            "subagents": int(part.get("subagents", 0)),
+            "tool_calls": sum(part.get("tools", {}).values()),
+        }
+        for hid, dname, part, always_keep in harness_parts
+        if always_keep or part.get("detected")
     ]
 
     su = claude["skill_usage"]
@@ -1253,7 +1814,8 @@ def collect_all(home: Path, tz_offset: float | None = None, year: int | None = N
     loop_count = su.get("loop", 0) + total_tools.get("ScheduleWakeup", 0) + total_tools.get("CronCreate", 0)
 
     inv = claude["inventory"]
-    inv["auto_or_bypass"] = claude["auto_or_bypass"] or codex["auto_or_bypass"]
+    inv["skills_installed"] = _count_unique_ecosystem_skills(home, inv["skills_installed"])
+    inv["auto_or_bypass"] = any(part.get("auto_or_bypass") for _, _, part, _ in harness_parts)
     inv["grep_calls"] = total_tools.get("Grep", 0)
     inv["glob_calls"] = total_tools.get("Glob", 0)
 
